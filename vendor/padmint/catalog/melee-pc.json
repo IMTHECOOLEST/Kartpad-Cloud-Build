@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "id": "melee-pc",
+  "repo_url": "https://github.com/chrissotraidis/melee-pc-padmint",
+  "name": "Melee PC",
+  "game": "Super Smash Bros. Melee (GameCube, USA revision 2)",
+  "player_targets": [
+    "ios"
+  ],
+  "game_ids": [
+    "GALE01"
+  ],
+  "player_game_file": "in-app",
+  "free_space_gb": 15,
+  "player_help": "https://github.com/chrissotraidis/melee-pc-padmint#build-with-padmint",
+  "reviewed_revision": null,
+  "manifest": null,
+  "notes": "Personal source build of 999sian/melee-pc 0.4.2 with maintained compatibility patches. Build locally on an Apple Silicon Mac or on GitHub in a private repository.",
+  "before_build": {
+    "commands": [
+      "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal"
+    ]
+  },
+  "player_next": {
+    "ios": {
+      "sideload": false,
+      "steps": [
+        "Install {file} using your signing tool, or import it into your existing LiveContainer setup. Keep your existing app and saves when installing a different port; saves are not migrated automatically.",
+        "Open Melee PC, tap Choose Disc and select your own USA revision 2 (NTSC-U 1.02) disc image from Files.",
+        "Keep this personal IPA private. Follow the linked setup guide for installation and updates."
+      ]
+    }
+  },
+  "github_build": true,
+  "github_build_private": true,
+  "off_mac": {
+    "tag": "GitHub Cloud Build",
+    "text": "Build Melee PC for iPhone/iPad on GitHub’s hosted Mac from your browser. Use a private copy of PadMint so the personal IPA stays private. Follow the guide to import the repository, run the melee-pc workflow and download your IPA. Your disc stays on your device. GitHub Actions usage limits apply.",
+    "url": "https://github.com/chrissotraidis/melee-pc-padmint#build-on-github-without-a-mac"
+  },
+  "other_ports": [
+    "meleepad"
+  ]
+}

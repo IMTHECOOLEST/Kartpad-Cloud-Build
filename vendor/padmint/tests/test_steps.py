@@ -1,0 +1,238 @@
+"""Manifests that list a game's existing scripts as ordered steps."""
+import argparse
+import io
+from contextlib import redirect_stdout
+import copy
+import json
+from pathlib import Path
+import shlex
+import subprocess
+import tempfile
+import unittest
+
+from padmint.cli import digest, execute, validate
+from padmint.manifest import HOSTS, host_id, steps_here, validate_manifest
+from fixtures import entries, write_ipa
+
+STEPS = {
+    "schema_version": 1, "id": "starshippad", "name": "Synthetic", "game": "Synthetic",
+    "kind": "decomp-patches", "status": "draft-untested",
+    "inputs": [{"type": "n64-rom", "when": "in-app"}],
+    "targets": {"ios": {"hosts": {"macos-arm64": "experimental"}, "output": "ipa", "check": "ipa",
+                        "steps": [
+                            {"stage": "dependencies", "command": ["/bin/bash", "{repo}/scripts/fetch.sh"]},
+                            {"stage": "package", "command": ["/bin/bash", "{repo}/scripts/package.sh", "{output}"]}]}},
+    "publication": {"public_binaries": False},
+}
+
+
+class StepsTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="padmint steps ")
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name).resolve()
+        self.repo = root / "backend"
+        (self.repo / "scripts").mkdir(parents=True)
+        ipa = root / "synthetic.ipa"
+        members = entries()
+        members.pop("KartPadBuilderProvenance.json")
+        write_ipa(ipa, members)
+        self.marker = root / "fetched"
+        (self.repo / ".gitignore").write_text("build/\n")
+        (self.repo / "scripts/fetch.sh").write_text("touch %s\n" % shlex.quote(str(self.marker)))
+        (self.repo / "scripts/package.sh").write_text("test -f %s && cp %s \"$1\"\n"
+                                                      % (shlex.quote(str(self.marker)), shlex.quote(str(ipa))))
+        self.commit(STEPS)
+
+    def commit(self, manifest):
+        (self.repo / "padmint.json").write_text(json.dumps(manifest))
+        if not (self.repo / ".git").exists():
+            for command in (["init", "-q"], ["config", "user.email", "t@example.invalid"], ["config", "user.name", "T"]):
+                subprocess.run(["git", "-C", str(self.repo), *command], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.repo), "commit", "-qm", "synthetic"], check=True)
+        revision = subprocess.check_output(["git", "-C", str(self.repo), "rev-parse", "HEAD"], text=True).strip()
+        self.args = argparse.Namespace(game="starshippad", repo=self.repo, disc=None, revision=revision,
+                                       source_only=False, no_mods=False, jobs=2)
+
+    def records(self):
+        path = next((self.repo / "build/padmint").glob("*/runs/*/record.json"))
+        events = [json.loads(line) for line in (path.parent / "progress.jsonl").read_text().splitlines()]
+        return json.loads(path.read_text()), [(e["backend"]["event"], e["backend"]["stage"])
+                                               for e in events if e["event"] == "backend_event"]
+
+    def test_a_second_build_shows_time_left_from_the_first(self):
+        repo, disc = validate(self.args)
+        first, second = io.StringIO(), io.StringIO()
+        with redirect_stdout(first):
+            self.assertEqual(execute(self.args, repo, disc), 0)
+        with redirect_stdout(second):
+            self.assertEqual(execute(self.args, repo, disc), 0)
+        self.assertNotIn("from your last build", first.getvalue())
+        self.assertIn("less than a minute left (from your last build)", second.getvalue())
+        self.assertEqual(second.getvalue().count("from your last build"), 2)  # once per stage
+
+    def test_steps_run_in_order_with_stage_events(self):
+        repo, disc = validate(self.args)
+        self.assertEqual(execute(self.args, repo, disc), 0)
+        record, stages = self.records()
+        self.assertEqual(record["status"], "completed")
+        self.assertEqual(stages, [("stage_started", "dependencies"), ("stage_completed", "dependencies"),
+                                  ("stage_started", "package"), ("stage_completed", "package")])
+
+    def test_failed_step_stops_the_build(self):
+        (self.repo / "scripts/fetch.sh").write_text("exit 7\n")
+        self.commit(STEPS)
+        repo, disc = validate(self.args)
+        self.assertEqual(execute(self.args, repo, disc), 7)
+        record, stages = self.records()
+        self.assertEqual(record["status"], "failed")
+        self.assertEqual(stages, [("stage_started", "dependencies"), ("stage_failed", "dependencies")])
+
+    def test_missing_step_script_and_invalid_steps_are_rejected(self):
+        broken = copy.deepcopy(STEPS)
+        broken["targets"]["ios"]["steps"][1]["command"][1] = "{repo}/scripts/missing.sh"
+        self.commit(broken)
+        with self.assertRaisesRegex(ValueError, "scripts/missing.sh"):
+            validate(self.args)
+        duplicate = copy.deepcopy(STEPS)
+        duplicate["targets"]["ios"]["steps"][1]["stage"] = "dependencies"
+        with self.assertRaisesRegex(ValueError, "unique"):
+            validate_manifest(duplicate)
+        both = copy.deepcopy(STEPS)
+        both["targets"]["ios"]["command"] = ["/bin/true"]
+        with self.assertRaisesRegex(ValueError, "not both"):
+            validate_manifest(both)
+
+    def test_a_step_runs_only_on_the_systems_it_lists(self):
+        here = host_id().split("-")[0]
+        elsewhere = next(system for system in ("windows", "linux", "macos") if system != here)
+        manifest = copy.deepcopy(STEPS)
+        steps = manifest["targets"]["ios"]["steps"]
+        # The same stage, once per system: the other system's script isn't even in the checkout.
+        steps[0:1] = [{"stage": "dependencies", "on": [elsewhere],
+                       "command": ["/bin/bash", "{repo}/scripts/other-system.sh"]},
+                      dict(steps[0], on=[here])]
+        self.commit(manifest)
+        repo, disc = validate(self.args)
+        self.assertEqual(execute(self.args, repo, disc), 0)
+        _record, stages = self.records()
+        self.assertEqual(stages, [("stage_started", "dependencies"), ("stage_completed", "dependencies"),
+                                  ("stage_started", "package"), ("stage_completed", "package")])
+        self.assertEqual([step["stage"] for step in steps_here(manifest["targets"]["ios"], f"{elsewhere}-x86_64")],
+                         ["dependencies", "package"])
+
+    def test_step_systems_are_checked(self):
+        def variant(**change):
+            manifest = copy.deepcopy(STEPS)
+            manifest["targets"]["ios"]["steps"][0].update(change)
+            return manifest
+        validate_manifest(variant(on=["macos", "linux"]))
+        with self.assertRaisesRegex(ValueError, "must list systems"):
+            validate_manifest(variant(on=["android"]))
+        with self.assertRaisesRegex(ValueError, "must list systems"):
+            validate_manifest(variant(on=[]))
+        overlap = copy.deepcopy(STEPS)
+        overlap["targets"]["ios"]["steps"].append(dict(overlap["targets"]["ios"]["steps"][0], on=["macos"]))
+        with self.assertRaisesRegex(ValueError, "unique on macos"):
+            validate_manifest(overlap)
+        nothing_here = copy.deepcopy(STEPS)
+        for step in nothing_here["targets"]["ios"]["steps"]:
+            step["on"] = ["linux"]
+        with self.assertRaisesRegex(ValueError, "no step runs on macos-arm64"):
+            validate_manifest(nothing_here)
+
+    def test_step_environment_receives_placeholders(self):
+        manifest = copy.deepcopy(STEPS)
+        manifest["targets"]["ios"]["steps"][1] = {
+            "stage": "package", "command": ["/bin/bash", "{repo}/scripts/package-env.sh"],
+            "env": {"SYNTHETIC_OUTPUT": "{output}"}}
+        source = shlex.quote(str(Path(self.temp.name).resolve() / "synthetic.ipa"))
+        (self.repo / "scripts/package-env.sh").write_text(f'cp {source} "$SYNTHETIC_OUTPUT"\n')
+        self.commit(manifest)
+        repo, disc = validate(self.args)
+        self.assertEqual(execute(self.args, repo, disc), 0)
+        record, _stages = self.records()
+        self.assertEqual(record["status"], "completed")
+        bad = copy.deepcopy(manifest)
+        bad["targets"]["ios"]["steps"][1]["env"] = {"lower": "x"}
+        with self.assertRaisesRegex(ValueError, "UPPER_CASE"):
+            validate_manifest(bad)
+
+    def test_steps_receive_the_job_cap(self):
+        seen = Path(self.temp.name).resolve() / "jobs"
+        (self.repo / "scripts/fetch.sh").write_text(
+            'printf %%s "$CMAKE_BUILD_PARALLEL_LEVEL" > %s\ntouch %s\n'
+            % (shlex.quote(str(seen)), shlex.quote(str(self.marker))))
+        self.commit(STEPS)
+        repo, disc = validate(self.args)
+        self.assertEqual(execute(self.args, repo, disc), 0)
+        self.assertEqual(seen.read_text(), "2")
+
+    def test_build_record_carries_the_game_version(self):
+        (self.repo / "version.json").write_text('{"version": "0.6.0", "build": 240}\n')
+        self.commit(STEPS)
+        repo, disc = validate(self.args)
+        self.assertEqual(execute(self.args, repo, disc), 0)
+        record, _stages = self.records()
+        self.assertEqual(record["game_version"], {"version": "0.6.0", "build": 240})
+
+    def test_history_summarizes_records(self):
+        repo, disc = validate(self.args)
+        self.assertEqual(execute(self.args, repo, disc), 0)
+        from padmint.cli import history
+        import io
+        stream = io.StringIO()
+        self.assertEqual(history(self.repo, stream), 0)
+        self.assertIn("completed", stream.getvalue())
+        self.assertIn("starshippad", stream.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+class FolderOutputTests(unittest.TestCase):
+    """A Windows game is a folder (BlueWake.exe and its DLLs): the backend leaves it at the
+    target's "folder", and PadMint checks and hands over the whole folder."""
+
+    def test_a_finished_folder_becomes_the_output(self):
+        temp = tempfile.TemporaryDirectory(prefix="padmint folder ")
+        self.addCleanup(temp.cleanup)
+        repo = Path(temp.name).resolve() / "backend"
+        repo.mkdir()
+        (repo / ".gitignore").write_text("build/\n")
+        make_app = ("import os, sys; app = os.path.join(sys.argv[1], 'App', 'game'); os.makedirs(app); "
+                    "open(os.path.join(app, '..', 'Game.exe'), 'w').write('x'); "
+                    "open(os.path.join(app, 'data.bin'), 'w').write('y')")
+        manifest = copy.deepcopy(STEPS)
+        manifest["targets"] = {"windows": {
+            "hosts": {host: "experimental" for host in HOSTS}, "output": "folder",
+            "folder": "{work}/App", "check": "none",
+            "steps": [{"stage": "package", "command": ["{python}", "-c", make_app, "{work}"]}]}}
+        (repo / "padmint.json").write_text(json.dumps(manifest))
+        for command in (["init", "-q"], ["config", "user.email", "t@example.invalid"],
+                        ["config", "user.name", "T"], ["add", "."], ["commit", "-qm", "synthetic"]):
+            subprocess.run(["git", "-C", str(repo), *command], check=True)
+        revision = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+        args = argparse.Namespace(game="starshippad", repo=repo, disc=None, revision=revision, target="windows",
+                                  source_only=False, no_mods=False, jobs=2)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(execute(args, *validate(args)), 0)
+        record_path = next((repo / "build/padmint").glob("*/runs/*/record.json"))
+        record = json.loads(record_path.read_text())
+        folder = record_path.parent / "personal"
+        self.assertEqual(record["status"], "completed")
+        self.assertEqual(sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file()),
+                         ["Game.exe", "game/data.bin"])
+        self.assertEqual(record["output_sha256"], digest(folder))
+        self.assertEqual(record["publication_gate"]["result"], "PASS")
+
+    def test_folder_belongs_to_folder_outputs(self):
+        manifest = copy.deepcopy(STEPS)
+        manifest["targets"]["ios"]["folder"] = "{work}/App"
+        with self.assertRaisesRegex(ValueError, "only for"):
+            validate_manifest(manifest)
+        manifest["targets"]["ios"].pop("folder")
+        manifest["targets"]["ios"]["output"] = "folder"
+        with self.assertRaisesRegex(ValueError, "names the finished folder"):
+            validate_manifest(manifest)

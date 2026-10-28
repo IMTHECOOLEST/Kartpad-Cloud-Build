@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "id": "brawlerpad",
+  "repo_url": "https://github.com/chrissotraidis/brawlerpad",
+  "name": "BrawlerPad",
+  "game": "Super Smash Bros. (N64)",
+  "player_targets": [
+    "ios",
+    "macos"
+  ],
+  "github_build": true,
+  "game_ids": [
+    "NALE"
+  ],
+  "free_space_gb": 3,
+  "player_game_file": "in-app",
+  "player_help": "https://github.com/chrissotraidis/brawlerpad#get-started",
+  "reviewed_revision": null,
+  "notes": "BrawlerPad owns padmint.json (steps around its existing scripts; ROM chosen in the app).",
+  "manifest": null,
+  "before_build": {
+    "commands": [
+      "brew install cmake ninja python@3.11 dylibbundler",
+      "python3.11 -m pip install --user Pillow"
+    ]
+  },
+  "player_next": {
+    "macos": {
+      "steps": [
+        "Open {file} and move BrawlerPad.app to your Applications folder.",
+        "Open BrawlerPad. The first time, it asks for your own Super Smash Bros. (NTSC-U v1.0) ROM: choose Browse… and then Extract.",
+        "Updating? Replace the old BrawlerPad.app with the new one. Your saves are kept."
+      ],
+      "translations": {
+        "es": {
+          "steps": [
+            "Abre {file} y mueve BrawlerPad.app a tu carpeta Aplicaciones.",
+            "Abre BrawlerPad. La primera vez te pide tu propia ROM de Super Smash Bros. (NTSC-U v1.0): elige Browse… y luego Extract.",
+            "¿Actualizando? Reemplaza el BrawlerPad.app anterior por el nuevo. Tus partidas guardadas se conservan."
+          ]
+        },
+        "pt": {
+          "steps": [
+            "Abra {file} e mova o BrawlerPad.app para a sua pasta Aplicativos.",
+            "Abra o BrawlerPad. Na primeira vez ele pede a sua própria ROM de Super Smash Bros. (NTSC-U v1.0): escolha Browse… e depois Extract.",
+            "Atualizando? Substitua o BrawlerPad.app antigo pelo novo. Seus saves são mantidos."
+          ]
+        }
+      }
+    }
+  }
+}

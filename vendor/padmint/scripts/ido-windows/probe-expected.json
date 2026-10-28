@@ -1,0 +1,13 @@
+{
+  "source": "hand-authored probe.c; reference objects from exact Mac IDO v1.1, source paths listed in README",
+  "objects": {
+    "5.3": {
+      "O2": "bfc2a8025862f97f65be9b08c5226bb2bc587c61fa49bb85e05ee6589e6929c6",
+      "O3": "70cf4f7b72b6b8ed54adf47b05e59d6daaafb379bfbdc9e566a5d9bd121e4c6d"
+    },
+    "7.1": {
+      "O2": "11c593c0aa2ad5d3a76ddd7833430aaca00398272a1c27cd02b50a19d559d45b",
+      "O3": "7e328423f19e3cbcb5ad5dbe89582e56b17df1ae7e958832e0870d439324d87d"
+    }
+  }
+}

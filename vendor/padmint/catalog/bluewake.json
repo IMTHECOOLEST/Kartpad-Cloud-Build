@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "id": "bluewake",
+  "repo_url": "https://github.com/chrissotraidis/bluewake",
+  "name": "BlueWake",
+  "game": "The Legend of Zelda: The Wind Waker (GameCube)",
+  "player_targets": [
+    "ios"
+  ],
+  "unoffered_targets": {
+    "linux": "BlueWake's Linux recipe has not been built through PadMint yet; Linux players build it from BlueWake's docs/LINUX.md."
+  },
+  "game_ids": [
+    "GZLE01"
+  ],
+  "free_space_gb": 25,
+  "player_help": "https://github.com/chrissotraidis/bluewake#install",
+  "off_mac": {
+    "url": "https://github.com/chrissotraidis/bluewake#get-bluewake",
+    "tag": "Windows app available",
+    "text": "BlueWake for Windows is ready to play: download it from BlueWake's latest release, unpack it, run BlueWake.exe and choose your own disc. PadMint isn't needed for that. For iPhone and iPad, PadMint builds BlueWake on a Mac with Apple Silicon (M1 or newer) and Xcode. GitHub Cloud Build can't make it, because the build turns code from your own disc into the app. On Linux, build it from BlueWake's Linux guide.",
+    "translations": {
+      "es": {
+        "tag": "App para Windows disponible",
+        "text": "BlueWake para Windows est\u00e1 listo para jugar: desc\u00e1rgalo de la \u00faltima versi\u00f3n de BlueWake, descompr\u00edmelo, abre BlueWake.exe y elige tu propio disco. Para eso no necesitas PadMint. Para iPhone y iPad, PadMint crea BlueWake en un Mac con Apple Silicon (M1 o posterior) y Xcode. GitHub Cloud Build no puede crearlo, porque la compilaci\u00f3n convierte c\u00f3digo de tu propio disco en la app. En Linux, cr\u00e9alo con la gu\u00eda de Linux de BlueWake."
+      },
+      "pt": {
+        "tag": "App para Windows dispon\u00edvel",
+        "text": "O BlueWake para Windows est\u00e1 pronto para jogar: baixe-o na vers\u00e3o mais recente do BlueWake, descompacte, abra o BlueWake.exe e escolha o seu pr\u00f3prio disco. Para isso voc\u00ea n\u00e3o precisa do PadMint. Para iPhone e iPad, o PadMint cria o BlueWake num Mac com Apple Silicon (M1 ou mais novo) e Xcode. O GitHub Cloud Build n\u00e3o consegue cri\u00e1-lo, porque a compila\u00e7\u00e3o transforma c\u00f3digo do seu pr\u00f3prio disco no app. No Linux, crie-o com o guia de Linux do BlueWake."
+      }
+    }
+  },
+  "reviewed_revision": null,
+  "notes": "BlueWake publishes padmint.json with each release, and PadMint builds from the latest release's recipe; the manifest here is the fallback. No revision is marked reviewed, so the checkout preflight only checks for a clean checkout. GitHub Cloud Build is unavailable because the build reads the disc.",
+  "manifest": {
+    "schema_version": 1,
+    "id": "bluewake",
+    "name": "BlueWake",
+    "game": "The Legend of Zelda: The Wind Waker (GameCube, GZLE01)",
+    "kind": "disc-translation",
+    "status": "experimental",
+    "inputs": [
+      {
+        "type": "gamecube-disc",
+        "formats": [
+          "iso"
+        ],
+        "description": "Your own GZLE01 disc image; the backend verifies it."
+      }
+    ],
+    "targets": {
+      "ios": {
+        "hosts": {
+          "macos-arm64": "experimental",
+          "linux-x86_64": "planned",
+          "windows-x86_64": "planned"
+        },
+        "command": [
+          "/bin/bash",
+          "{repo}/scripts/builder/build.sh",
+          "{disc}",
+          "--out",
+          "{work}",
+          "--jobs",
+          "{jobs}"
+        ],
+        "modes": {
+          "full": [
+            "--train-pgo",
+            "--ipa",
+            "{output}"
+          ],
+          "source-only": [
+            "--source-only"
+          ]
+        },
+        "options": {
+          "no-mods": [
+            "--no-mods"
+          ]
+        },
+        "output": "ipa",
+        "check": "bluewake-ipa"
+      },
+      "macos": {
+        "hosts": {
+          "macos-arm64": "planned"
+        }
+      }
+    },
+    "requirements": {
+      "disk_gb": 25,
+      "tools": [
+        {
+          "name": "git",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "cmake",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "ninja",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "python3",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "xcodebuild",
+          "version_args": [
+            "-version"
+          ],
+          "note": "Install Xcode and its iOS platform"
+        }
+      ]
+    },
+    "stages": [
+      "preflight",
+      "dependencies",
+      "extract",
+      "translate",
+      "generate",
+      "mods",
+      "train-build",
+      "train-run",
+      "train-merge",
+      "compile",
+      "app",
+      "package"
+    ],
+    "publication": {
+      "public_binaries": false,
+      "reason": "Personal builds contain translated game code; public releases are source only."
+    }
+  }
+}

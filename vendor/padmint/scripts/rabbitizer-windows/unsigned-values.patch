@@ -1,0 +1,22 @@
+--- a/rabbitizer/rabbitizer_type_RegistersTracker.c
++++ b/rabbitizer/rabbitizer_type_RegistersTracker.c
+@@ -80,7 +80,7 @@
+     }
+ 
+     if (RabbitizerRegistersTracker_getAddressIfCanSetType(&self->tracker, &instr->instr, instrOffset, &dstAddress)) {
+-        return PyLong_FromLong(dstAddress);
++        return PyLong_FromUnsignedLong(dstAddress);
+     }
+ 
+     Py_RETURN_NONE;
+--- a/rabbitizer/rabbitizer_submodule_Utils.c
++++ b/rabbitizer/rabbitizer_submodule_Utils.c
+@@ -57,7 +57,7 @@
+         return NULL;
+     }
+ 
+-    return PyLong_FromLong(RabbitizerUtils_floatRepr_32From16(hex_repr));
++    return PyLong_FromUnsignedLong(RabbitizerUtils_floatRepr_32From16(hex_repr));
+ }
+ 
+ 

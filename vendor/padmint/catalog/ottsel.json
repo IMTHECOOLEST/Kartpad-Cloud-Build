@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "id": "ottsel",
+  "name": "Ottsel",
+  "game": "Jak and Daxter: The Precursor Legacy (PS2)",
+  "repo_url": "https://github.com/chrissotraidis/ottsel",
+  "player_targets": [
+    "ios",
+    "macos"
+  ],
+  "free_space_gb": 20,
+  "player_help": "https://github.com/chrissotraidis/ottsel#build-your-own-with-padmint",
+  "reviewed_revision": null,
+  "notes": "Ottsel owns its recipe (ottsel-v...-padmint.json in each release). Apple Silicon Mac only; the disc must be the USA SCUS-97124 Black Label release, which the build checks.",
+  "before_build": {
+    "commands": [
+      "brew install cmake ninja ripgrep glslang spirv-cross"
+    ]
+  },
+  "game_data_import": {
+    "ios": "••• → Game Data → Import Game Data…",
+    "macos": "Game Data → Import Game Data…"
+  },
+  "player_next": {
+    "ios": {
+      "sideload": true,
+      "steps": [
+        "First time only: copy the Ottsel game data folder from {folder} to the iPhone or iPad (iCloud Drive, a USB drive, or Finder: select the device, open Files and drag it onto Ottsel). In Ottsel, open ••• → Game Data → Import Game Data…, choose that folder, then close and reopen Ottsel."
+      ]
+    },
+    "macos": {
+      "steps": [
+        "Unzip {file}, move Ottsel to your Applications folder and open it. It needs no Apple account.",
+        "First time only: in the menu bar, choose Game Data → Import Game Data…, pick the Ottsel game data folder in {folder}, then quit and reopen Ottsel."
+      ]
+    }
+  },
+  "manifest": null
+}

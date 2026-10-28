@@ -1,0 +1,296 @@
+name: Build KartPad for iPhone and iPad (cloud Mac)
+
+# Builds KartPad (Mario Kart Wii) for iPhone and iPad on a GitHub-hosted Mac, from your own
+# game disc. PadMint's Mac build is made and run from the command line; nothing opens a
+# window. The result is an UNSIGNED personal IPA that contains translated game code, so it
+# goes to a DRAFT release and, in a private repository, to a workflow artifact. Never publish it.
+on:
+  workflow_dispatch:
+    inputs:
+      upload_draft_release:
+        description: Attach the IPA and SHA256SUMS to a draft release
+        type: boolean
+        default: true
+      upload_artifact:
+        description: Also keep the IPA as a workflow artifact (private repositories only)
+        type: boolean
+        default: true
+      artifact_retention_days:
+        description: Days to keep the artifact (1 to 90)
+        type: number
+        default: 3
+      jobs:
+        description: Parallel compile jobs, 1 to 16 (blank lets PadMint choose)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 240
+    environment: disc-build
+    permissions:
+      contents: write
+    concurrency:
+      group: kartpad-ios
+      cancel-in-progress: false
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+      PADMINT_REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+      PADMINT_TERMINAL: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Check inputs, Xcode and disk space
+        env:
+          JOBS: ${{ inputs.jobs }}
+          UPLOAD_ARTIFACT: ${{ inputs.upload_artifact }}
+          RETENTION_DAYS: ${{ inputs.artifact_retention_days }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$JOBS" ] && ! [[ "$JOBS" =~ ^([1-9]|1[0-6])$ ]]; then
+            echo "::error::The jobs input must be a whole number from 1 to 16, or blank."
+            exit 1
+          fi
+          if [ "$UPLOAD_ARTIFACT" = "true" ] && ! [[ "$RETENTION_DAYS" =~ ^([1-9]|[1-8][0-9]|90)$ ]]; then
+            echo "::error::artifact_retention_days must be a whole number from 1 to 90."
+            exit 1
+          fi
+
+          {
+            echo "PADMINT_HOME=$RUNNER_TEMP/padmint-home"
+            echo "OUT=$RUNNER_TEMP/padmint-out"
+            echo "ASSETS_DIR=$RUNNER_TEMP/release-assets"
+          } >> "$GITHUB_ENV"
+
+          has_iphoneos_sdk() {
+            [ -d "$1" ] && DEVELOPER_DIR="$1" xcrun --sdk iphoneos --show-sdk-version >/dev/null 2>&1
+          }
+          if ! has_iphoneos_sdk "$DEVELOPER_DIR"; then
+            echo "::warning::$DEVELOPER_DIR is missing or has no iPhoneOS SDK; looking for the newest Xcode that has one."
+            chosen=""
+            while IFS= read -r app; do
+              if has_iphoneos_sdk "$app/Contents/Developer"; then
+                chosen="$app/Contents/Developer"
+                break
+              fi
+            done < <(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -rV)
+            if [ -z "$chosen" ]; then
+              echo "::error::No installed Xcode has an iPhoneOS SDK."
+              exit 1
+            fi
+            export DEVELOPER_DIR="$chosen"
+            echo "DEVELOPER_DIR=$chosen" >> "$GITHUB_ENV"
+          fi
+          echo "Using DEVELOPER_DIR=$DEVELOPER_DIR"
+          xcodebuild -version
+          echo "iPhoneOS SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
+          df -h "$RUNNER_TEMP"
+
+          need_kb=$((16 * 1024 * 1024))
+          free_kb() { df -Pk "$RUNNER_TEMP" | awk 'NR==2 {print $4}'; }
+          if [ "$(free_kb)" -lt "$need_kb" ]; then
+            echo "::warning::Less than about 16 GB is free; deleting unused simulators and Xcode versions."
+            xcrun simctl shutdown all >/dev/null 2>&1 || true
+            xcrun simctl delete all >/dev/null 2>&1 || true
+            sudo xcrun simctl runtime delete all >/dev/null 2>&1 || true
+            sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes/* 2>/dev/null || true
+            selected_app="${DEVELOPER_DIR%/Contents/Developer}"
+            while IFS= read -r app; do
+              [ "$(free_kb)" -lt "$need_kb" ] || break
+              [ "$app" != "$selected_app" ] || continue
+              echo "Removing $app"
+              sudo rm -rf "$app" || true
+            done < <(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V)
+            df -h "$RUNNER_TEMP"
+            if [ "$(free_kb)" -lt "$need_kb" ]; then
+              echo "::warning::Still under 16 GB free; PadMint will check this itself and stop if it is not enough."
+            fi
+          fi
+
+      - name: Install ripgrep
+        run: brew install ripgrep
+
+      - name: Build PadMint's Mac build
+        run: |
+          set -euo pipefail
+          dist="$RUNNER_TEMP/padmint-dist"
+          mac="$RUNNER_TEMP/padmint-mac"
+          log="$RUNNER_TEMP/package-release.log"
+          rm -rf "$dist" "$mac"
+
+          set +e
+          /usr/bin/python3 vendor/padmint/scripts/package-release.py "$dist" 2>&1 | tee "$log"
+          status="${PIPESTATUS[0]}"
+          set -e
+
+          route="mac-build"
+          if [ "$status" -eq 0 ]; then
+            mkdir -p "$mac"
+            unzip -q "$dist/PadMint-macos.zip" -d "$mac"
+            app="$(find "$mac" -maxdepth 2 -type d -path '*/PadMint-v*/app' | head -n 1)"
+            if [ -z "$app" ] || [ ! -f "$app/padmint/__init__.py" ]; then
+              echo "::error::PadMint-macos.zip does not contain PadMint-v*/app/padmint/__init__.py."
+              exit 1
+            fi
+          elif grep -Eq '^FAIL .*PadMint-macos' "$log"; then
+            echo "::error::package-release.py rejected the macOS payload itself. Stopping."
+            exit 1
+          else
+            echo "::warning::package-release.py failed (exit $status) for a reason that does not involve the macOS payload (it also builds the Windows and Linux zips). Running PadMint from vendor/padmint instead; it is the same code."
+            app="$GITHUB_WORKSPACE/vendor/padmint"
+            route="vendor-fallback"
+            if [ ! -f "$app/padmint/__init__.py" ]; then
+              echo "::error::vendor/padmint/padmint/__init__.py is missing."
+              exit 1
+            fi
+          fi
+          echo "PadMint app folder route: $route"
+          {
+            echo "PADMINT_APP_DIR=$app"
+            echo "PADMINT_ROUTE=$route"
+          } >> "$GITHUB_ENV"
+
+      - name: Check dependencies and download PadMint's tools (command line only)
+        run: |
+          set -euo pipefail
+          cd "$PADMINT_APP_DIR"
+          export PYTHONUNBUFFERED=1
+          /usr/bin/python3 -m padmint --version
+          /usr/bin/python3 -m padmint list
+          /usr/bin/python3 -m padmint doctor kartpad --target ios
+          /usr/bin/python3 -m padmint tools kartpad --target ios
+
+      - name: Get the disc image
+        env:
+          DISC_ZIP_URL: ${{ secrets.DISC_ZIP_URL }}
+          DISC_ZIP_SHA256: ${{ secrets.DISC_ZIP_SHA256 }}
+          DISC_ZIP_AUTH_HEADER: ${{ secrets.DISC_ZIP_AUTH_HEADER }}
+        run: /usr/bin/python3 -I scripts/prepare-disc.py
+
+      - name: Build KartPad for iPhone and iPad with PadMint
+        env:
+          JOBS: ${{ inputs.jobs }}
+        run: bash scripts/run-padmint.sh
+
+      - name: Collect the IPA and checksums
+        id: collect
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ipas=("$OUT"/*.ipa)
+          if [ "${#ipas[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one .ipa in the output folder, found ${#ipas[@]}."
+            exit 1
+          fi
+          ipa="${ipas[0]}"
+          name="$(basename "$ipa")"
+
+          /usr/bin/python3 -I - "$ipa" <<'PY'
+          import sys
+          import zipfile
+
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              bad = archive.testzip()
+              if bad is not None:
+                  raise SystemExit("the IPA is damaged")
+              names = archive.namelist()
+          if not any(n.startswith("Payload/") and n.endswith(".app/Info.plist") for n in names):
+              raise SystemExit("the IPA has no Payload/<app>.app/Info.plist")
+          PY
+
+          version="$(printf '%s' "$name" | sed -n 's/^KartPad-v\(.*\)-ios-personal\.ipa$/\1/p')"
+          [ -n "$version" ] || version="unknown"
+
+          rm -rf "$ASSETS_DIR"
+          mkdir -p "$ASSETS_DIR"
+          ln "$ipa" "$ASSETS_DIR/$name" 2>/dev/null || cp "$ipa" "$ASSETS_DIR/$name"
+          (cd "$ASSETS_DIR" && shasum -a 256 "$name" > SHA256SUMS)
+          sha="$(awk '{print $1}' "$ASSETS_DIR/SHA256SUMS")"
+          bytes="$(stat -f %z "$ASSETS_DIR/$name")"
+          mb="$(awk -v b="$bytes" 'BEGIN {printf "%.1f", b / 1048576}')"
+
+          {
+            echo "KARTPAD_VERSION=$version"
+            echo "IPA_NAME=$name"
+          } >> "$GITHUB_ENV"
+          echo "IPA: $name ($mb MB)"
+          echo "SHA-256: $sha"
+
+          {
+            echo "## KartPad for iPhone and iPad"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| KartPad version | $version |"
+            echo "| IPA | \`$name\` |"
+            echo "| Size | $mb MB |"
+            echo "| SHA-256 | \`$sha\` |"
+            echo "| Disc input | ${DISC_SOURCE_KIND:-unknown} |"
+            echo "| PadMint | ${PADMINT_ROUTE:-unknown} |"
+            echo ""
+            echo "The IPA is **unsigned** and contains translated game code. Sign it yourself; never publish it."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create draft release
+        if: ${{ inputs.upload_draft_release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash scripts/upload-draft-release.sh
+
+      - name: Skip the artifact in a public repository
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' && inputs.upload_artifact && github.event.repository.private != true }}
+        run: |
+          echo "::warning::Not uploading a workflow artifact: this repository is public, and any signed-in GitHub user can download a public repository's artifacts. Use the draft release, or make the repository private."
+
+      - name: Upload workflow artifact (private repositories only)
+        if: ${{ !cancelled() && steps.collect.outcome == 'success' && inputs.upload_artifact && github.event.repository.private == true }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: kartpad-ios-personal-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/release-assets/*.ipa
+            ${{ runner.temp }}/release-assets/SHA256SUMS
+          retention-days: ${{ inputs.artifact_retention_days }}
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Record where the files went
+        if: ${{ success() }}
+        env:
+          DRAFT: ${{ inputs.upload_draft_release }}
+          ARTIFACT: ${{ inputs.upload_artifact }}
+          PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          {
+            echo ""
+            echo "### Delivered"
+            [ "$DRAFT" != "true" ] || echo "- Draft release kartpad-ios-personal-$GITHUB_RUN_NUMBER (a draft: never publish it)"
+            if [ "$ARTIFACT" = "true" ] && [ "$PRIVATE" = "true" ]; then
+              echo "- Workflow artifact kartpad-ios-personal-$GITHUB_RUN_NUMBER"
+            fi
+            if [ "$DRAFT" != "true" ] && { [ "$ARTIFACT" != "true" ] || [ "$PRIVATE" != "true" ]; }; then
+              echo "- Nowhere: the IPA stayed on the runner and is gone now."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up
+        if: ${{ always() }}
+        run: |
+          rm -rf "$RUNNER_TEMP/disc-work" "$RUNNER_TEMP/mkw.iso" "$RUNNER_TEMP/wit" \
+            "$RUNNER_TEMP/padmint-home" "$RUNNER_TEMP/padmint-out" "$RUNNER_TEMP/release-assets" \
+            "$RUNNER_TEMP/padmint-dist" "$RUNNER_TEMP/padmint-mac" \
+            "$RUNNER_TEMP/padmint-make.log" "$RUNNER_TEMP/package-release.log" || true

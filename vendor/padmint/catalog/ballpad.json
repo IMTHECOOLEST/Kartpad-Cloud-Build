@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "ballpad",
+  "repo_url": "https://github.com/chrissotraidis/ballpad",
+  "name": "BallPad",
+  "game": "Super Mario Strikers (GameCube)",
+  "player_targets": [
+    "ios"
+  ],
+  "github_build": true,
+  "game_ids": [
+    "G4QE01"
+  ],
+  "free_space_gb": 5,
+  "player_game_file": "in-app",
+  "player_help": "https://github.com/chrissotraidis/ballpad#experimental-preview",
+  "reviewed_revision": null,
+  "notes": "Manifest owned by the game repository (native build scripts; disc imported in the app).",
+  "manifest": null,
+  "before_build": {
+    "commands": [
+      "brew install cmake ninja ripgrep"
+    ]
+  }
+}

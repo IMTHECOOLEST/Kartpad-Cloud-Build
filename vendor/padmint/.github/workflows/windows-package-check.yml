@@ -1,0 +1,205 @@
+name: Windows package check
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rabbitizer-windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.15'
+          architecture: x64
+      - name: Install pinned wheel build requirements
+        run: python -m pip install --require-hashes -r scripts/rabbitizer-windows/build-requirements.txt
+      - name: Build and test the public unsigned-value APIs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pins = Get-Content scripts/rabbitizer-windows/inputs.json -Raw | ConvertFrom-Json
+          $inputs = Join-Path $env:RUNNER_TEMP 'Rabbitizer pinned inputs'
+          New-Item -ItemType Directory $inputs | Out-Null
+          foreach ($pin in @($pins.source, $pins.python_sdk)) {
+            Invoke-WebRequest $pin.url -OutFile (Join-Path $inputs $pin.file)
+          }
+          $unicodeTemp = Join-Path $env:RUNNER_TEMP 'Rabbitizer temporary 雪'
+          New-Item -ItemType Directory $unicodeTemp | Out-Null
+          $env:TEMP = $unicodeTemp
+          $env:TMP = $unicodeTemp
+          python -B scripts/rabbitizer-windows/build.py --source-archive (Join-Path $inputs $pins.source.file) --sdk-archive (Join-Path $inputs $pins.python_sdk.file) --work (Join-Path $env:RUNNER_TEMP 'Rabbitizer source build 雪')
+          if ($LASTEXITCODE -ne 0) { throw 'Rabbitizer source build or unsigned API regression failed' }
+  intel-mac-player-flow:
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Intel target selection, requirements and existing player flows
+        run: |
+          python -c 'from padmint.manifest import host_id; assert host_id() == "macos-x86_64", host_id()'
+          python -B -m unittest discover -s tests -v
+  phone-bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -B -m unittest discover -s tests -p test_android_bootstrap.py -v
+      - run: python -B -m unittest discover -s tests -p test_next_steps.py -v
+      - run: python -B -m unittest discover -s tests -p test_game_data_folder.py -v
+  packaged-player-flow:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: Keep release files identical across build hosts
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Package and audit public downloads
+        run: python scripts/package-release.py release-check
+      - name: Check portable checksum bytes and all package hashes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $raw = [IO.File]::ReadAllBytes((Join-Path $PWD 'release-check/SHA256SUMS'))
+          if ($raw -contains 13) { throw 'SHA256SUMS contains CR bytes' }
+          if ($raw.Length -eq 0 -or $raw[-1] -ne 10) { throw 'SHA256SUMS must end with LF' }
+          $lines = [Text.Encoding]::UTF8.GetString($raw).TrimEnd("`n").Split("`n")
+          if ($lines.Count -ne 3) { throw 'Expected checksums for all three packages' }
+          foreach ($line in $lines) {
+            if ($line -notmatch '^([0-9a-f]{64})  (PadMint-(windows|macos|linux)\.zip)$') {
+              throw "Invalid checksum entry: $line"
+            }
+            $expected = $Matches[1]
+            $name = $Matches[2]
+            $actual = (Get-FileHash (Join-Path 'release-check' $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $expected) { throw "Checksum mismatch: $name" }
+            Write-Host "Checksum verified: $name $actual"
+          }
+          Write-Host 'SHA256SUMS: LF only, no CR bytes, all three package hashes match'
+      - name: Check the included Python and player flows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = (Get-ChildItem release-check/*-windows.zip).FullName
+          $probe = Join-Path $PWD 'scripts/player-flow-probe.py'
+          Expand-Archive $zip "$env:RUNNER_TEMP/package check with spaces 雪"
+          $package = (Get-ChildItem "$env:RUNNER_TEMP/package check with spaces 雪" -Directory).FullName
+          $tests = "$env:RUNNER_TEMP/player-checks"
+          New-Item -ItemType Directory $tests | Out-Null
+          Copy-Item tests/test_windows_process.py, tests/test_cli_encoding.py, tests/test_start.py, tests/test_finish_submodules.py, tests/test_source_download.py, tests/test_host_preflight.py, tests/test_progress_output.py, tests/test_package.py, tests/test_tools.py, tests/test_python_path.py, tests/test_ios_hosts.py, tests/test_ios_imports.py, tests/test_ios_module_result.py, tests/test_ios_module_hosts.py, tests/test_ios_module_compatibility.py, tests/test_installed_input.py, tests/fixtures.py, tests/test_next_steps.py, tests/test_game_data_folder.py, tests/test_ui.py $tests
+          foreach ($top in 'PadMint.cmd', 'Start here.txt', 'app/python/python.exe') { if (-not (Test-Path (Join-Path $package $top))) { throw "Missing $top" } }
+          Push-Location (Join-Path $package app)
+          try {
+            & ./python/python.exe -m padmint --version
+            if ($LASTEXITCODE -ne 0) { throw 'Included Python cannot start PadMint' }
+            & ./python/python.exe -m unittest discover -s $tests -v
+            if ($LASTEXITCODE -ne 0) { throw 'Guided setup, safe recovery or IPA validation failed' }
+            & ./python/python.exe -m padmint audit $zip
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged content audit failed' }
+            & ./python/python.exe $probe "$env:RUNNER_TEMP/PadMint player probe 雪" --app (Join-Path $package app)
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged player build, retry or preservation probe failed' }
+          } finally {
+            Pop-Location
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checked-public-packages-${{ matrix.os }}
+          path: release-check/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: player-probe-${{ matrix.os }}
+          path: ${{ runner.temp }}/PadMint player probe 雪/probe-result.json
+          retention-days: 7
+
+  packaged-linux-player-flow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Package and audit public downloads
+        run: python scripts/package-release.py release-check
+      - name: Check the Linux package and player flows
+        shell: bash
+        run: |
+          set -euo pipefail
+          linux_zip="$(realpath release-check/*-linux.zip)"
+          probe="$PWD/scripts/player-flow-probe.py"
+          player_tests="$RUNNER_TEMP/linux-player-checks"
+          mkdir -p "$RUNNER_TEMP/linux-package-check" "$player_tests"
+          unzip -q "$linux_zip" -d "$RUNNER_TEMP/linux-package-check"
+          cp tests/test_start.py tests/test_finish_submodules.py tests/test_source_download.py tests/test_host_preflight.py tests/test_progress_output.py tests/test_package.py tests/test_tools.py tests/test_python_path.py tests/test_ios_hosts.py tests/test_ios_imports.py tests/test_ios_module_result.py tests/test_ios_module_hosts.py tests/test_ios_module_compatibility.py tests/test_installed_input.py tests/fixtures.py tests/test_next_steps.py tests/test_game_data_folder.py tests/test_ui.py "$player_tests/"
+          linux_package=("$RUNNER_TEMP/linux-package-check"/PadMint-v*)
+          test "${#linux_package[@]}" -eq 1
+          test -f "${linux_package[0]}/padmint.sh" && test -f "${linux_package[0]}/Start here.txt"
+          cd "${linux_package[0]}/app"
+          unset PYTHONPATH PYTHONHOME
+          python -c 'from pathlib import Path; import padmint; assert Path(padmint.__file__).resolve().parent == Path.cwd() / "padmint", padmint.__file__; print("Packaged import:", padmint.__file__)'
+          python -m padmint --version
+          python -m unittest discover -s "$player_tests" -v
+          python -m padmint audit "$linux_zip"
+          python "$probe" "$RUNNER_TEMP/PadMint player probe" --app "$PWD"
+
+  # The universal iPhone module pipeline on native hosts: open-source SDK, LLVM compile,
+  # import check and insertion into KartPad's public app (no game code anywhere).
+  universal-ios-module:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm, ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Keep release files identical across build hosts
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Check pinned IDO producer input and failure paths
+        run: python -B scripts/ido-windows/test_build.py
+      - name: Check pinned asm-processor preparation
+        run: python -B scripts/asm-processor-windows/test_prepare.py
+      - name: Check pinned Rabbitizer producer input and failure paths
+        run: python -B scripts/rabbitizer-windows/test_build.py
+      - uses: actions/cache@v4
+        with:
+          path: ~/.padmint/tools
+          key: padmint-tools-${{ matrix.os }}-${{ hashFiles('padmint/tools.lock.json') }}
+          restore-keys: padmint-tools-${{ matrix.os }}-
+      - name: Unit tests for the module pipeline
+        run: python -B -m unittest discover -s tests -p "test_ios_module*.py" -v
+        if: runner.os != 'Windows'
+      - name: Build, check and insert a probe module
+        run: python -B scripts/ios-module-probe.py "${{ runner.temp }}/ios-module-probe"
+      - name: Compile MIPS patches with the managed compiler
+        if: runner.os == 'Windows'
+        run: python -B scripts/mips-compiler-probe.py "${{ runner.temp }}/MIPS probe with spaces"
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: mips-compiler-probe-${{ matrix.os }}
+          path: ${{ runner.temp }}/MIPS probe with spaces/result.json
+          retention-days: 7

@@ -1,0 +1,62 @@
+--- a/libc_impl.c
++++ b/libc_impl.c
+@@ -242,18 +242,18 @@
+ static void memory_allocate(uint8_t* mem, uint32_t start, uint32_t end) {
+     assert(start >= MEM_REGION_START);
+     assert(end <= MEM_REGION_START + MEM_REGION_SIZE);
++#ifdef __CYGWIN__
++    uintptr_t _start = TRUNC_PAGE((uintptr_t)mem + start);
++    uintptr_t _end = ROUND_PAGE((uintptr_t)mem + end);
++
++    if (mprotect((void*)_start, _end - _start, PROT_READ | PROT_WRITE) < 0) {
++        perror("mprotect (memory_allocate)");
++        exit(1);
++    }
++#else
+     // `start` will be passed to mmap,
+     // so it has to be host aligned in order to keep the guest's pages valid
+     assert(start == TRUNC_PAGE(start) && "Page size too small, try increasing `page_size` in recomp.cpp");
+-#ifdef __CYGWIN__
+-    uintptr_t _start = TRUNC_PAGE((uintptr_t)mem + start);
+-    uintptr_t _end = ROUND_PAGE((uintptr_t)mem + end);
+-
+-    if (mprotect((void*)_start, _end - _start, PROT_READ | PROT_WRITE) < 0) {
+-        perror("mprotect (memory_allocate)");
+-        exit(1);
+-    }
+-#else
+     void* addr = (void*)TRUNC_PAGE((uintptr_t)mem + start);
+     size_t len = end - start;
+ 
+@@ -3038,7 +3038,11 @@
+ void wrapper___assert(uint8_t* mem, uint32_t assertion_addr, uint32_t file_addr, int line) {
+     STRING(assertion)
+     STRING(file)
++#ifdef __CYGWIN__
++    __assert(file, line, assertion);
++#else
+     __assert(assertion, file, line);
++#endif
+ }
+ 
+ // https://linux.die.net/man/3/twalk
+--- a/recomp.cpp
++++ b/recomp.cpp
+@@ -3,7 +3,6 @@
+ #include <cstdlib>
+ #include <cstring>
+ #include <cinttypes>
+-#include <unistd.h>
+ 
+ #include <map>
+ #include <set>
+@@ -16,9 +15,6 @@
+ 
+ #include "elf.h"
+ 
+-#if defined(_WIN32) && !defined(__CYGWIN__)
+-#include <windows.h>
+-#endif /* _WIN32 && !__CYGWIN__ */
+ 
+ #if !defined(_MSC_VER) && !defined(__CYGWIN__) && !defined(_WIN32)
+ #define UNIX_PLATFORM

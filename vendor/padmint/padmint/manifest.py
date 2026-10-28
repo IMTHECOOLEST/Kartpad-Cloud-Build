@@ -1,0 +1,481 @@
+"""`padmint.json` schemas v1/v2: what a game repository declares to PadMint.
+
+A game repository owns its manifest. PadMint's catalog (`catalog/*.json`) lists
+supported games and may carry an interim manifest for a repository that has not
+added its own yet. Game-specific work stays in the game repository.
+"""
+import hashlib
+import json
+from pathlib import Path
+import platform
+import re
+import string
+
+SCHEMA_VERSION = 2
+KINDS = {"disc-translation", "emulator-shell", "decomp-patches", "upstream-engine", "clean-engine"}
+STATUSES = {"draft-untested", "experimental", "supported", "retired"}
+HOSTS = {"macos-arm64", "macos-x86_64", "linux-x86_64", "linux-arm64", "windows-x86_64", "windows-arm64"}
+# A step's "on" lists the systems it runs on; without it, a step runs everywhere.
+SYSTEMS = {"macos", "linux", "windows"}
+HOST_STATES = {"verified", "experimental", "planned", "unsupported"}
+RUNNABLE_STATES = {"verified", "experimental"}
+TARGETS = {"ios", "macos", "android", "windows", "linux"}
+# {app}: the published app a game pack links against (padmint build --app).
+# {python}: the Python running PadMint (Windows has no python3 command).
+# {ios_sdk}, {ios_toolchain}: the open-source iPhone SDK and its CMake toolchain file,
+# which PadMint prepares for targets with an ios_module (padmint/ios_module.py).
+PLACEHOLDERS = {"repo", "disc", "work", "output", "jobs", "app", "python", "ios_sdk", "ios_toolchain"}
+CHECKS = {"bluewake-ipa", "kartpad-ipa", "ipa", "none"}
+INPUT_TIMES = {"build", "in-app"}
+CATALOG = Path(__file__).resolve().parent.parent / "catalog"
+_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
+
+
+class NeedsNewerPadMint(ValueError):
+    """A game's recipe uses a schema or tool that needs a newer PadMint."""
+
+
+def _require(condition, message):
+    if not condition:
+        raise ValueError(f"padmint.json: {message}")
+
+
+def _argv(value, where):
+    _require(isinstance(value, list) and all(isinstance(item, str) for item in value),
+             f"{where} must be a list of strings")
+    for item in value:
+        for _, field, _, _ in string.Formatter().parse(item):
+            _require(field is None or field in PLACEHOLDERS,
+                     f"{where} uses unknown placeholder {{{field}}}")
+
+
+def validate_manifest(data):
+    """Validate a manifest dictionary and return it unchanged."""
+    _require(isinstance(data, dict), "manifest must be an object")
+    version = data.get("schema_version")
+    if isinstance(version, int) and version > SCHEMA_VERSION:
+        raise NeedsNewerPadMint(f"This recipe uses schema {version}; update PadMint before building it.")
+    _require(version in (1, SCHEMA_VERSION), "schema_version must be 1 or 2")
+    _require(isinstance(data.get("id"), str) and _ID.fullmatch(data["id"]), "id must be a short lowercase slug")
+    for field in ("name", "game"):
+        _require(isinstance(data.get(field), str) and data[field], f"{field} is required")
+    _require(data.get("kind") in KINDS, f"kind must be one of {sorted(KINDS)}")
+    _require(data.get("status") in STATUSES, f"status must be one of {sorted(STATUSES)}")
+    inputs = data.get("inputs")
+    _require(isinstance(inputs, list) and inputs, "inputs must list at least one accepted input")
+    for item in inputs:
+        _require(isinstance(item, dict) and isinstance(item.get("type"), str), "each input needs a type")
+        _require(isinstance(item.get("formats", []), list), "input formats must be a list")
+        _require(item.get("when", "build") in INPUT_TIMES, f"input when must be one of {sorted(INPUT_TIMES)}")
+        if "selection" in item:
+            _require(item["selection"] in ("file", "installed"), "input selection must be file or installed")
+            _require(item.get("when", "build") == "build", "input selection applies only to build inputs")
+            _require(item["selection"] != "installed" or version >= 2,
+                     "installed input selection requires schema_version 2 so older PadMint refuses it safely")
+        for digest in item.get("verified_sha256", []):
+            _require(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest),
+                     "verified_sha256 entries must be lowercase SHA-256 digests")
+        if "accepted_sha256" in item:
+            accepted = item["accepted_sha256"]
+            _require(isinstance(accepted, list) and accepted and
+                     all(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) for value in accepted),
+                     "input accepted_sha256 must be a non-empty list of lowercase SHA-256 digests")
+        game_ids = item.get("game_ids", [])
+        _require(isinstance(game_ids, list) and all(isinstance(gid, str) and re.fullmatch(r"[0-9A-Z]{6}", gid)
+                                                    for gid in game_ids),
+                 "input game_ids must be six-character disc IDs such as RMCP01")
+        revisions = item.get("revisions", [])
+        _require(isinstance(revisions, list) and all(isinstance(value, int) and value >= 0 for value in revisions),
+                 "input revisions must be disc revision numbers")
+    targets = data.get("targets")
+    _require(isinstance(targets, dict) and targets, "targets must declare at least one target")
+    for name, target in targets.items():
+        where = f"targets.{name}"
+        _require(name in TARGETS, f"unknown target {name}")
+        _require(isinstance(target, dict), f"{where} must be an object")
+        hosts = target.get("hosts")
+        _require(isinstance(hosts, dict) and hosts, f"{where}.hosts must map hosts to states")
+        for host, state in hosts.items():
+            _require(host in HOSTS, f"{where}.hosts has unknown host {host}")
+            _require(state in HOST_STATES, f"{where}.hosts.{host} must be one of {sorted(HOST_STATES)}")
+        runnable = any(state in RUNNABLE_STATES for state in hosts.values())
+        _require(not ("command" in target and "steps" in target), f"{where} uses command or steps, not both")
+        if "command" in target:
+            _argv(target["command"], f"{where}.command")
+        if "steps" in target:
+            steps = target["steps"]
+            _require(isinstance(steps, list) and steps, f"{where}.steps must be a non-empty list")
+            names = []
+            for index, step in enumerate(steps):
+                _require(isinstance(step, dict) and isinstance(step.get("stage"), str) and step["stage"],
+                         f"{where}.steps[{index}] needs a stage name")
+                _argv(step.get("command"), f"{where}.steps[{index}].command")
+                _require(step["command"], f"{where}.steps[{index}].command must not be empty")
+                on = step.get("on")
+                _require(on is None or (isinstance(on, list) and on and set(on) <= SYSTEMS),
+                         f"{where}.steps[{index}].on must list systems from {sorted(SYSTEMS)}")
+                env = step.get("env", {})
+                _require(isinstance(env, dict) and all(re.fullmatch(r"[A-Z][A-Z0-9_]*", key) for key in env),
+                         f"{where}.steps[{index}].env must map UPPER_CASE names to values")
+                _argv(list(env.values()), f"{where}.steps[{index}].env")
+                names.append((step["stage"], set(on or SYSTEMS)))
+            for system in SYSTEMS:
+                here = [stage for stage, systems in names if system in systems]
+                _require(len(here) == len(set(here)), f"{where}.steps stage names must be unique on {system}")
+            for host, state in hosts.items():
+                _require(state not in RUNNABLE_STATES or steps_here(target, host),
+                         f"{where}: no step runs on {host}")
+            _require(not target.get("modes") and not target.get("options"),
+                     f"{where}: steps targets do not support modes or options yet")
+        _require(not runnable or "command" in target or "steps" in target,
+                 f"{where} has a runnable host but no command or steps")
+        if "tools" in target:
+            from .tools import lock
+            known = lock()
+            _require(isinstance(target["tools"], list) and all(isinstance(item, str) for item in target["tools"]),
+                     f"{where}.tools must be a list of tool names")
+            unknown = [item for item in target["tools"] if item not in known]
+            if unknown:
+                raise NeedsNewerPadMint(
+                    f"This version of {data.get('name') or 'this game'} needs a newer PadMint (it uses "
+                    f"{unknown[0]}). Download the latest PadMint from "
+                    "https://github.com/chrissotraidis/padmint/releases/latest and run it again.")
+        if "published_app" in target:
+            _require(isinstance(target["published_app"], str) and "{version}" in target["published_app"],
+                     f"{where}.published_app must name the release asset, with {{version}}")
+        if "ios_module" in target:
+            module = target["ios_module"]
+            _require(name == "ios", f"{where}.ios_module is only for the ios target")
+            _require(isinstance(module, dict), f"{where}.ios_module must be an object")
+            if "on" in module:
+                _require(version >= 2, f"{where}.ios_module.on requires schema_version 2")
+                on = module["on"]
+                _require(isinstance(on, list) and on and
+                         all(isinstance(system, str) and system in SYSTEMS for system in on) and
+                         len(on) == len(set(on)),
+                         f"{where}.ios_module.on must list unique systems from {sorted(SYSTEMS)}")
+            if "result" in module:
+                _require(version >= 2, f"{where}.ios_module.result requires schema_version 2")
+                _require(set(module) <= {"result", "on"} and isinstance(module["result"], str) and module["result"],
+                         f"{where}.ios_module uses result or file and into, not both")
+                _argv([module["result"]], f"{where}.ios_module.result")
+            else:
+                _require(set(module) <= {"file", "into", "on"}, f"{where}.ios_module has an unknown field")
+                _require(isinstance(module.get("file"), str) and isinstance(module.get("into"), str),
+                         f"{where}.ios_module needs file and into")
+                _argv([module["file"]], f"{where}.ios_module.file")
+            _require("published_app" in target, f"{where}.ios_module needs published_app: the app it goes into")
+            _require("libcxx" in target.get("tools", []),
+                     f"{where}.ios_module needs the libcxx tool (it brings LLVM and the open-source headers)")
+            from .ios_module import ModuleError, _member
+            try:
+                if "into" in module:
+                    _member(module["into"])
+            except ModuleError as error:
+                _require(False, f"{where}.{error}")
+        if target.get("output") == "folder":
+            # A program with its files (BlueWake.exe and its DLLs): the backend leaves the
+            # finished folder at "folder", and PadMint hands that whole folder to the player.
+            _require(isinstance(target.get("folder"), str) and target["folder"],
+                     f"{where}: a folder output names the finished folder in \"folder\"")
+            _argv([target["folder"]], f"{where}.folder")
+        else:
+            _require("folder" not in target, f"{where}.folder is only for \"output\": \"folder\"")
+        modes = target.get("modes", {"full": []})
+        _require(isinstance(modes, dict) and "full" in modes, f"{where}.modes must include full")
+        for mode, extra in modes.items():
+            _argv(extra, f"{where}.modes.{mode}")
+        options = target.get("options", {})
+        _require(isinstance(options, dict), f"{where}.options must be an object")
+        for option, extra in options.items():
+            _argv(extra, f"{where}.options.{option}")
+        _require(target.get("check", "none") in CHECKS, f"{where}.check must be one of {sorted(CHECKS)}")
+    requirements = data.get("requirements", {})
+    _require(isinstance(requirements, dict), "requirements must be an object")
+    for tool in requirements.get("tools", []):
+        _require(isinstance(tool, dict) and isinstance(tool.get("name"), str), "each tool needs a name")
+        if "version_args" in tool:
+            _argv(tool["version_args"], f"tool {tool['name']}.version_args")
+        if "min_version" in tool:
+            _require(re.fullmatch(r"\d+(\.\d+)*", str(tool["min_version"])), "min_version must be dotted digits")
+        # player: the player installs it (PadMint can't), so the player path checks it before
+        # any download and shows the note, which says how to install it.
+        _require(isinstance(tool.get("player", False), bool), f"tool {tool['name']}.player must be true or false")
+        # label: what players read instead of the program's name (xcrun checks the Metal Toolchain).
+        _require(isinstance(tool.get("label", "x"), str) and tool.get("label", "x").strip(),
+                 f"tool {tool['name']}.label must be text")
+        _require(not tool.get("player") or (isinstance(tool.get("note"), str) and tool["note"].strip()),
+                 f"tool {tool['name']} is for players, so it needs a note saying how to install it")
+        # hosts: the build hosts it is needed on (Xcode on a Mac, a C compiler on Linux).
+        _require("hosts" not in tool or (isinstance(tool["hosts"], list) and tool["hosts"]
+                                         and all(isinstance(host, str) for host in tool["hosts"])),
+                 f"tool {tool['name']}.hosts must be a list of build hosts")
+        # targets: the targets it is needed for (Xcode for iOS and macOS, not Android).
+        _require("targets" not in tool or (isinstance(tool["targets"], list) and tool["targets"]
+                                           and set(tool["targets"]) <= set(TARGETS)),
+                 f"tool {tool['name']}.targets must be a list of targets")
+        if "input_formats" in tool:
+            formats = tool["input_formats"]
+            _require(isinstance(formats, list) and formats and
+                     all(isinstance(value, str) and re.fullmatch(r"[a-z0-9]+", value) for value in formats),
+                     f"tool {tool['name']}.input_formats must be a non-empty list of lowercase extensions")
+    disk = requirements.get("disk_gb", 0)
+    _require(isinstance(disk, (int, float)) and disk >= 0, "requirements.disk_gb must be a number")
+    publication = data.get("publication")
+    _require(isinstance(publication, dict) and isinstance(publication.get("public_binaries"), bool),
+             "publication.public_binaries must be true or false")
+    return data
+
+
+def manifest_sha256(data):
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+
+
+def needs_build_input(data):
+    """True when the backend reads private game inputs, including local installations."""
+    return any(item.get("when", "build") == "build" for item in data["inputs"])
+
+
+def selected_inputs(data):
+    """Build inputs supplied with --disc; installed inputs stay with the backend."""
+    return [item for item in data.get("inputs", [])
+            if item.get("when", "build") == "build" and item.get("selection", "file") == "file"]
+
+
+def player_input_mode(data):
+    """The catalog's input choice, derived from the selected recipe."""
+    return "build" if selected_inputs(data) else "installed" if needs_build_input(data) else "in-app"
+
+
+def ios_build_hosts(entry):
+    """Exact local iOS hosts, or the unchanged legacy catalog policy when omitted."""
+    if "ios_hosts" in entry:
+        return list(entry["ios_hosts"])
+    hosts = ["macos-arm64"]
+    if entry.get("ios_intel_mac"):
+        hosts.append("macos-x86_64")
+    if entry.get("ios_off_mac"):
+        hosts.extend(("windows-x86_64", "windows-arm64", "linux-x86_64", "linux-arm64"))
+    return hosts
+
+
+def validate_github_build(entry, recipe):
+    """Refuse a hosted build unless the selected recipe needs no private game input."""
+    if not entry.get("github_build") or entry.get("player_game_file") != "in-app" \
+            or "ios" not in entry.get("player_targets", []):
+        raise ValueError(f"{entry['id']} is not offered for a GitHub iPhone build")
+    if recipe.get("id") != entry["id"]:
+        raise ValueError(f"the published recipe declares {recipe.get('id')}, not {entry['id']}")
+    if needs_build_input(recipe):
+        raise ValueError("the published recipe reads a game file while building; keep this build local")
+    target = recipe.get("targets", {}).get("ios", {})
+    if target.get("hosts", {}).get("macos-arm64") not in RUNNABLE_STATES:
+        raise ValueError("the published recipe cannot build iOS on GitHub's Apple Silicon Mac")
+    return recipe
+
+
+def load_manifest(path):
+    with Path(path).open() as stream:
+        return validate_manifest(json.load(stream))
+
+
+def catalog():
+    """Return catalog entries keyed by game ID."""
+    entries = {}
+    for path in sorted(CATALOG.glob("*.json")):
+        with path.open() as stream:
+            entry = json.load(stream)
+        if not isinstance(entry, dict) or entry.get("id") != path.stem:
+            raise ValueError(f"catalog/{path.name}: id must match the file name")
+        if not str(entry.get("repo_url", "")).startswith("https://"):
+            raise ValueError(f"catalog/{path.name}: repo_url must be an https URL")
+        revision = entry.get("reviewed_revision")
+        if revision is not None and not re.fullmatch(r"[0-9a-f]{40}", str(revision)):
+            raise ValueError(f"catalog/{path.name}: reviewed_revision must be a full commit or null")
+        targets = entry.get("player_targets", [])
+        if not isinstance(targets, list) or not set(targets) <= {"android", "ios", "macos", "windows"}:
+            raise ValueError(f"catalog/{path.name}: player_targets lists android, ios, macos or windows")
+        if entry.get("player_game_file", "build") not in ("build", "installed", "in-app"):
+            raise ValueError(f"catalog/{path.name}: player_game_file is build, installed or in-app")
+        for flag in ("ios_off_mac", "ios_intel_mac"):
+            if not isinstance(entry.get(flag, False), bool) or (entry.get(flag) and "ios" not in targets):
+                raise ValueError(f"catalog/{path.name}: {flag} is true or false, for an ios player target")
+        if "ios_hosts" in entry:
+            hosts = entry["ios_hosts"]
+            if not isinstance(hosts, list) or not hosts or "ios" not in targets \
+                    or not all(isinstance(host, str) and host in HOSTS for host in hosts) \
+                    or len(set(hosts)) != len(hosts):
+                raise ValueError(f"catalog/{path.name}: ios_hosts is a nonempty list of unique known hosts, "
+                                 "for an ios player target")
+        github = entry.get("github_build", False)
+        if not isinstance(github, bool) or (github and (
+                "ios" not in targets or entry.get("player_game_file") != "in-app")):
+            raise ValueError(f"catalog/{path.name}: github_build is true or false, "
+                             "for an ios target that takes the game file in-app")
+        private = entry.get("github_build_private", False)
+        if not isinstance(private, bool) or (private and (not github or not entry.get("off_mac"))):
+            raise ValueError(f"catalog/{path.name}: github_build_private needs github_build and an off_mac setup guide")
+        for platform, steps in (entry.get("player_next") or {}).items():
+            if platform not in targets or not isinstance(steps, dict) or not steps.get("steps") \
+                    or not all(isinstance(step, str) for step in steps["steps"]):
+                raise ValueError(f"catalog/{path.name}: player_next.{platform} needs a player target "
+                                 "and a list of steps")
+            if "phone_steps" in steps and (not isinstance(steps["phone_steps"], list)
+                    or not all(isinstance(step, str) for step in steps["phone_steps"])):
+                raise ValueError(f"catalog/{path.name}: player_next.{platform}.phone_steps "
+                                 "must be a list of strings")
+            if not isinstance(steps.get("sideload", False), bool) or (steps.get("sideload") and platform != "ios"):
+                raise ValueError(f"catalog/{path.name}: player_next.{platform}.sideload is true or false, for ios")
+        ids = entry.get("game_ids", [])
+        if not isinstance(ids, list) or not all(re.fullmatch(r"[0-9A-Z]{4}|[0-9A-Z]{6}", str(i)) for i in ids):
+            raise ValueError(f"catalog/{path.name}: game_ids lists six-character disc IDs "
+                             "or four-character N64 game codes")
+        labels = entry.get("game_data_import") or {}
+        if not isinstance(labels, dict) or not all(platform in targets and isinstance(label, str)
+                                                   for platform, label in labels.items()):
+            raise ValueError(f"catalog/{path.name}: game_data_import names a player target's button")
+        # Apps with nothing to build: their own published app plus the player's own files.
+        download = entry.get("download")
+        if download is not None:
+            if not isinstance(download, dict) or not all(
+                    isinstance(text, dict) for text in (download.get("translations") or {}).values()):
+                raise ValueError(f"catalog/{path.name}: download is an object with steps")
+            lists = [download.get("steps")] + [text.get("steps") for text in
+                                               (download.get("translations") or {}).values()]
+            if targets or not entry.get("name") or not all(
+                    isinstance(steps, list) and steps and all(isinstance(s, str) for s in steps)
+                    for steps in lists):
+                raise ValueError(f"catalog/{path.name}: download needs a name, no player_targets "
+                                 "and lists of steps")
+        # Games listed so players can find them, with where they stand: nothing to build or
+        # download through PadMint yet.
+        plays_on = entry.get("plays_on", [])
+        if not isinstance(plays_on, list) or not set(plays_on) <= {"ipad", "iphone", "mac"}:
+            raise ValueError(f"catalog/{path.name}: plays_on lists ipad, iphone or mac")
+        later = entry.get("later")
+        if later is not None and (not isinstance(later, dict) or targets or download is not None
+                                  or not entry.get("name") or not entry.get("game")
+                                  or not all(isinstance(text.get("text", later.get("text")), str)
+                                             for text in [later] + list((later.get("translations") or {}).values()))):
+            raise ValueError(f"catalog/{path.name}: later needs a name, a game, text, "
+                             "and no player_targets or download")
+        # Games PadMint builds only on an Apple Silicon Mac that the game itself can also make
+        # another way (HaloPad's Xbox edition on GitHub Cloud Build): shown off the Mac instead
+        # of "Needs Apple Silicon Mac", with a link to those steps.
+        off_mac = entry.get("off_mac")
+        if off_mac is not None and (not isinstance(off_mac, dict) or not targets
+                                    or not str(off_mac.get("url", "")).startswith("https://")
+                                    or ("tag" in off_mac and not isinstance(off_mac["tag"], str))
+                                    or not all(isinstance(text.get("text", off_mac.get("text")), str)
+                                               for text in [off_mac] + list((off_mac.get("translations") or {}).values()))):
+            raise ValueError(f"catalog/{path.name}: off_mac needs player_targets, an https url and text")
+        # Targets the game's recipe can build that PadMint deliberately doesn't offer yet, each
+        # with the reason; scripts/audit-catalog.py reports any other hidden target.
+        held = entry.get("unoffered_targets")
+        if held is not None and (not isinstance(held, dict) or not set(held) <= TARGETS
+                                 or not all(isinstance(why, str) and why.strip() for why in held.values())):
+            raise ValueError(f"catalog/{path.name}: unoffered_targets maps targets to a reason")
+        # Games that also publish ready-to-play downloads: where they are, one line saying so and,
+        # optionally, the player_targets they cover (default: all of them).
+        ready = entry.get("ready_to_play")
+        if ready is not None and (not isinstance(ready, dict) or not targets
+                                  or not str(ready.get("url", "")).startswith("https://")
+                                  or not set(ready.get("platforms", targets)) <= set(targets)
+                                  or not all(isinstance(text.get("text", ready.get("text")), str)
+                                             for text in [ready] + list((ready.get("translations") or {}).values()))):
+            raise ValueError(f"catalog/{path.name}: ready_to_play needs player_targets, an https url, text "
+                             "and platforms from player_targets")
+        # Programs the game's README asks Mac players to install once (Homebrew and the like),
+        # shown on the page before the build: Terminal lines, copied from the README.
+        before = entry.get("before_build")
+        if before is not None and (not targets or not isinstance(before, dict) or set(before) != {"commands"}
+                                   or not isinstance(before["commands"], list) or not before["commands"]
+                                   or not all(isinstance(line, str) and line.strip() for line in before["commands"])):
+            raise ValueError(f"catalog/{path.name}: before_build needs player_targets and a list of commands")
+        # Games offered to players must say how much space their first build needs, or doctor
+        # reports "0 GB needed" and make's early check does nothing.
+        space = entry.get("free_space_gb", 0 if not targets else None)
+        if not isinstance(space, int) or isinstance(space, bool) or space < 0 or (targets and space < 1):
+            raise ValueError(f"catalog/{path.name}: free_space_gb is a whole number of GB"
+                             + (", required for games with player_targets" if targets else ""))
+        target_space = entry.get("free_space_gb_by_target", {})
+        if not isinstance(target_space, dict) or not all(
+                target in targets and isinstance(amount, int) and not isinstance(amount, bool) and amount > 0
+                for target, amount in target_space.items()):
+            raise ValueError(f"catalog/{path.name}: free_space_gb_by_target maps player_targets to positive whole GB")
+        if entry.get("manifest") is not None:
+            validate_manifest(entry["manifest"])
+            if entry["manifest"]["id"] != entry["id"]:
+                raise ValueError(f"catalog/{path.name}: interim manifest id mismatch")
+        entries[entry["id"]] = entry
+    for game, entry in entries.items():
+        ports = entry.get("other_ports", [])
+        if not isinstance(ports, list) or any(not isinstance(port, str) or port == game
+                or port not in entries for port in ports) or len(set(ports)) != len(ports):
+            raise ValueError(f"catalog/{game}.json: other_ports must name distinct other catalog entries")
+    return entries
+
+
+def repository_manifest(repo):
+    """A checkout's padmint.json, or padforge.json from before the rename (0.2.0)."""
+    for name in ("padmint.json", "padforge.json"):
+        if (Path(repo) / name).is_file():
+            return Path(repo) / name
+    return None
+
+
+def manifest_for(game, repo=None):
+    """The game repository's own manifest wins; otherwise the catalog's interim one."""
+    path = repository_manifest(repo) if repo is not None else None
+    if path is not None:
+        data = load_manifest(path)
+        if data["id"] != game:
+            raise ValueError(f"Checkout's {path.name} declares {data['id']}, not {game}")
+        return data, "repository"
+    entry = catalog().get(game)
+    if entry is None:
+        raise ValueError(f"Unknown game {game}; see 'padmint list'")
+    if entry.get("manifest") is None:
+        raise ValueError(f"{game} expects padmint.json in its checkout")
+    return entry["manifest"], "catalog"
+
+
+def host_id():
+    system = {"Darwin": "macos", "Linux": "linux", "Windows": "windows"}.get(platform.system(), platform.system().lower())
+    machine = platform.machine().lower()
+    machine = {"aarch64": "arm64", "amd64": "x86_64"}.get(machine, machine)
+    return f"{system}-{machine}"
+
+
+def steps_here(target, host=None):
+    """The target's steps that run on this computer (or on host): a step with "on" runs only
+    on those systems, so one recipe can use a shell script on Macs and Linux and a Python
+    builder on Windows, then share the steps that are the same everywhere."""
+    system = (host or host_id()).split("-")[0]
+    return [step for step in target["steps"] if system in step.get("on", [system])]
+
+
+def module_here(target, host=None):
+    """Use shared module packaging only on the recipe's selected systems.
+
+    Without "on", existing recipes use it everywhere. Other systems keep the
+    game's own full-app command, including its modes and options.
+    """
+    module = target.get("ios_module")
+    system = (host or host_id()).split("-")[0]
+    return module if module and system in module.get("on", [system]) else None
+
+
+ANDROID_MARK = Path("/system/build.prop")
+
+
+def on_android():
+    """True in Linux on an Android phone or tablet (Ubuntu in Termux, see
+    launchers/padmint-android.sh). host_id() is linux-arm64 there; the kernel,
+    storage and memory are the phone's."""
+    return platform.system() == "Linux" and ANDROID_MARK.is_file()
+
+
+def expand(template, values):
+    """Fill placeholders inside a fixed argument list; values never become shell text."""
+    return [item.format_map(values) for item in template]

@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "id": "snappad",
+  "repo_url": "https://github.com/chrissotraidis/snappad",
+  "name": "SnapPad",
+  "game": "Pokémon Snap (N64)",
+  "player_targets": [
+    "ios",
+    "macos"
+  ],
+  "game_ids": [
+    "NPFE"
+  ],
+  "free_space_gb": 20,
+  "before_build": {
+    "commands": [
+      "brew install cmake ninja jq ripgrep uv rust gcc",
+      "xcodebuild -downloadComponent MetalToolchain"
+    ]
+  },
+  "player_help": "https://github.com/chrissotraidis/snappad#build-from-source",
+  "reviewed_revision": null,
+  "notes": "Manifest owned by the game repository: pinned ROM-free sources, the player's ROM decompiled privately and an ahead-of-time core; the copy stays personal.",
+  "manifest": {
+    "schema_version": 1,
+    "id": "snappad",
+    "name": "SnapPad",
+    "game": "Pokémon Snap (N64, USA)",
+    "kind": "decomp-patches",
+    "status": "experimental",
+    "inputs": [
+      {
+        "type": "n64-rom",
+        "formats": [
+          "z64",
+          "v64",
+          "n64"
+        ],
+        "when": "build",
+        "description": "Your own Pokémon Snap (USA) ROM. It is checked and decompiled privately on this Mac during the build and never leaves it."
+      }
+    ],
+    "targets": {
+      "ios": {
+        "hosts": {
+          "macos-arm64": "experimental"
+        },
+        "tools": [
+          "git",
+          "cmake",
+          "ninja"
+        ],
+        "output": "ipa",
+        "check": "ipa",
+        "steps": [
+          {
+            "stage": "build",
+            "command": [
+              "/bin/bash",
+              "{repo}/scripts/build-padmint-ios.sh",
+              "{disc}",
+              "{output}"
+            ]
+          }
+        ]
+      }
+    },
+    "requirements": {
+      "disk_gb": 6,
+      "tools": [
+        {
+          "name": "git",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "cmake",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "ninja",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "python3",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "jq",
+          "version_args": [
+            "--version"
+          ],
+          "player": true,
+          "note": "Install it with Homebrew; see PadMint's before-build line for this game."
+        },
+        {
+          "name": "rg",
+          "label": "ripgrep",
+          "version_args": [
+            "--version"
+          ],
+          "player": true,
+          "note": "Install it with Homebrew; see PadMint's before-build line for this game."
+        },
+        {
+          "name": "uv",
+          "version_args": [
+            "--version"
+          ],
+          "player": true,
+          "note": "Install it with Homebrew; see PadMint's before-build line for this game."
+        },
+        {
+          "name": "cargo",
+          "version_args": [
+            "--version"
+          ],
+          "player": true,
+          "note": "Install it with Homebrew; see PadMint's before-build line for this game."
+        },
+        {
+          "name": "cpp-16",
+          "label": "GNU cpp-16",
+          "version_args": [
+            "--version"
+          ],
+          "player": true,
+          "note": "Install it with Homebrew; see PadMint's before-build line for this game."
+        },
+        {
+          "name": "xcodebuild",
+          "version_args": [
+            "-version"
+          ],
+          "min_version": "26",
+          "player": true,
+          "note": "Install Xcode 26 or newer with its iOS platform, then select it in Xcode Settings > Locations > Command Line Tools; Command Line Tools alone are not enough."
+        },
+        {
+          "name": "xcrun",
+          "label": "Xcode iPhoneOS SDK",
+          "version_args": [
+            "--sdk",
+            "iphoneos",
+            "--show-sdk-path"
+          ],
+          "player": true,
+          "note": "Install Xcode 26 or newer with its iOS platform, then select it in Xcode Settings > Locations > Command Line Tools; Command Line Tools alone are not enough."
+        }
+      ]
+    },
+    "publication": {
+      "public_binaries": false,
+      "reason": "Each copy holds game code made from the player's own ROM on their own Mac, so it stays personal."
+    }
+  },
+  "player_next": {
+    "macos": {
+      "steps": [
+        "Open {file} and move SnapPad.app to your Applications folder.",
+        "Open SnapPad and choose the same Pokémon Snap (USA) ROM when it asks; it keeps a private copy on this Mac.",
+        "Updating? Replace the old SnapPad.app with the new one. Your saves are kept."
+      ],
+      "translations": {
+        "es": {
+          "steps": [
+            "Abre {file} y mueve SnapPad.app a tu carpeta Aplicaciones.",
+            "Abre SnapPad y elige la misma ROM de Pokémon Snap (EE. UU.) cuando te la pida; guarda una copia privada en este Mac.",
+            "¿Actualizando? Reemplaza el SnapPad.app anterior por el nuevo. Tus partidas guardadas se conservan."
+          ]
+        },
+        "pt": {
+          "steps": [
+            "Abra {file} e mova o SnapPad.app para a sua pasta Aplicativos.",
+            "Abra o SnapPad e escolha a mesma ROM de Pokémon Snap (EUA) quando ele pedir; ele guarda uma cópia privada neste Mac.",
+            "Atualizando? Substitua o SnapPad.app antigo pelo novo. Seus saves são mantidos."
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "repository": "https://github.com/simonlindholm/asm-processor",
+  "tag": "1.0.1",
+  "commit": "52d6454e9d2ac8ed30fe523c0b58647d65d6199a",
+  "files": {
+    "build.py": {
+      "size": 4040,
+      "sha256": "0afb78162af9de89736b082e86d9d1e12cc60d0ea6f987791ac13f77e1b18ec9",
+      "url": "https://raw.githubusercontent.com/simonlindholm/asm-processor/52d6454e9d2ac8ed30fe523c0b58647d65d6199a/build.py"
+    },
+    "asm_processor.py": {
+      "size": 69434,
+      "sha256": "e107ca643ad4318b6008246b68419fe3c7bf2a7212206a4955241422870016b6",
+      "url": "https://raw.githubusercontent.com/simonlindholm/asm-processor/52d6454e9d2ac8ed30fe523c0b58647d65d6199a/asm_processor.py"
+    },
+    "prelude.inc": {
+      "size": 1773,
+      "sha256": "bacf6555ab3653fc4a1f4d4ba41127141684ca60d848fcd7e4c7c122107ab390",
+      "url": "https://raw.githubusercontent.com/simonlindholm/asm-processor/52d6454e9d2ac8ed30fe523c0b58647d65d6199a/prelude.inc"
+    },
+    "LICENSE": {
+      "size": 1210,
+      "sha256": "88d9b4eb60579c191ec391ca04c16130572d7eedc4a86daa58bf28c6e14c9bcd",
+      "url": "https://raw.githubusercontent.com/simonlindholm/asm-processor/52d6454e9d2ac8ed30fe523c0b58647d65d6199a/LICENSE"
+    }
+  },
+  "patched_sha256": "b610722552ba8310a126a272df8fcedcbc8e51abd05eef18893cf90c87d09f31"
+}

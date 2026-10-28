@@ -1,0 +1,389 @@
+"""A recipe can mark programs the player installs themselves (requirements.tools with
+"player": true and a note). The player path checks only those, before any download
+(padmint#7: GoldenPad needed Homebrew SDL2, found only after minutes of building)."""
+import copy
+import io
+import json
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from padmint import cli
+from padmint.manifest import catalog, validate_manifest
+
+SDL2 = {"name": "sdl2-config", "player": True, "note": "Install SDL2: brew install sdl2"}
+DEVELOPER = {"name": "rg", "version_args": ["--version"]}
+
+
+def recipe(*tools):
+    data = copy.deepcopy(catalog()["kartpad"]["manifest"])
+    data["requirements"] = {"disk_gb": 1, "tools": list(tools)}
+    return data
+
+
+def which_without(*missing):
+    return lambda name: None if name in missing else f"/usr/bin/{name}"
+
+
+class BeginnerSetupTests(unittest.TestCase):
+    """What a player with a new Mac reads: one Xcode item that says how to get Xcode, and one
+    Homebrew line for everything missing, instead of each recipe note on its own."""
+
+    XCODE = {"name": "xcodebuild", "version_args": ["-version"], "player": True, "note": "Install Xcode"}
+
+    def checks(self, problem):
+        with mock.patch.object(cli, "host_id", return_value="macos-arm64"), \
+                mock.patch.object(cli, "check_program", return_value=(False, "")), \
+                mock.patch.object(cli, "xcode_problem", return_value=problem):
+            return cli.requirement_checks(recipe(self.XCODE, SDL2), "ios", lang="en")
+
+    def test_without_xcode_its_checks_become_one_item_that_says_how_to_get_it(self):
+        checks = self.checks(("install", None))
+        self.assertEqual([check["label"] for check in checks], ["Xcode", "SDL2 (sdl2-config)"])
+        self.assertIn("App Store", checks[0]["note"])
+        selected = self.checks(("select", "/Applications/Xcode.app"))[0]
+        self.assertIn("isn't using it yet", selected["note"])
+        self.assertEqual(selected["command"], "sudo xcode-select -s /Applications/Xcode.app")
+
+    def test_with_xcode_in_use_the_ios_platform_check_keeps_its_own_note(self):
+        labels = [check["label"] for check in self.checks(None)]
+        self.assertEqual(labels, ["Xcode", "SDL2 (sdl2-config)", "Xcode iOS platform"])
+
+    def test_missing_homebrew_programs_share_one_install_line(self):
+        from padmint import ui
+        manifest = recipe({"name": "winetricks", "player": True, "input_formats": ["exe"],
+                           "note": "brew install winetricks (your product ID)"},
+                          {"name": "ld.lld", "player": True, "note": "brew install lld (the Xbox edition)"})
+        before = {"commands": ["brew install cmake ninja lld", "rustup toolchain install 1.88.0"], "homebrew": True,
+                  "packages": [{"name": "cmake", "ok": True}, {"name": "ninja", "ok": False}, {"name": "lld", "ok": False}]}
+        with mock.patch.object(ui, "release_recipe", return_value=manifest), \
+                mock.patch.object(cli, "host_id", return_value="macos-arm64"), \
+                mock.patch.object(cli, "check_program", return_value=(False, "")), \
+                mock.patch.object(cli, "before_build", return_value=before):
+            plan = ui.plan("kartpad", "android", "en")
+        self.assertEqual(plan["mac_setup"]["brew_line"], "brew install ninja lld winetricks")
+        self.assertEqual(plan["mac_setup"]["other"], ["rustup toolchain install 1.88.0"])
+        self.assertEqual({need["label"]: need["only"] for need in plan["needs"]}, {"winetricks": ["exe"], "ld.lld": []})
+
+
+class ManifestFieldTests(unittest.TestCase):
+    def test_player_is_true_or_false_and_needs_a_note(self):
+        validate_manifest(recipe(SDL2, DEVELOPER))
+        with self.assertRaisesRegex(ValueError, "player must be true or false"):
+            validate_manifest(recipe(dict(SDL2, player="yes")))
+        with self.assertRaisesRegex(ValueError, "needs a note"):
+            validate_manifest(recipe({"name": "sdl2-config", "player": True}))
+
+    def test_a_requirement_can_apply_to_some_build_hosts_only(self):
+        # BlueWake: Xcode on a Mac, a C compiler on Linux, the same recipe.
+        xcode = {"name": "xcodebuild", "player": True, "note": "Install Xcode", "hosts": ["macos-arm64"]}
+        compiler = {"name": "cc", "player": True, "note": "sudo apt install build-essential",
+                    "hosts": ["linux-x86_64", "linux-arm64"]}
+        data = recipe(xcode, compiler, DEVELOPER)
+        validate_manifest(data)
+        for host, expected in (("macos-arm64", ["xcodebuild"]), ("linux-arm64", ["cc"]), ("windows-x86_64", [])):
+            with mock.patch.object(cli, "host_id", return_value=host):
+                self.assertEqual([tool["name"] for tool in cli.player_requirements(data)], expected)
+        with self.assertRaisesRegex(ValueError, "hosts must be a list"):
+            validate_manifest(recipe(dict(xcode, hosts="macos-arm64")))
+
+
+class InputToolTests(unittest.TestCase):
+    def test_selected_file_controls_requirements_without_affecting_other_games(self):
+        wine = {"name": "wine", "player": True, "note": "Install Wine for the PC edition", "input_formats": ["exe"]}
+        data = recipe(wine, SDL2)
+        validate_manifest(data)
+        for path, expected in ((None, ['wine', 'sdl2-config']),
+                               (Path('Halo.XISO'), ['sdl2-config']),
+                               (Path('HaloCESetup.EXE'), ['wine', 'sdl2-config'])):
+            self.assertEqual([t['name'] for t in cli.player_requirements(data, disc=path)], expected)
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(cli.host_requirements(data, Path(folder)), data['requirements']['tools'])
+        with mock.patch.object(cli, 'check_program', side_effect=lambda t: (t['name'] != 'wine', 'missing')):
+            cli.require_programs(data, 'macos', Path('Halo.iso'))
+            with self.assertRaisesRegex(ValueError, 'Install Wine'):
+                cli.require_programs(data, 'macos', Path('HaloCESetup.exe'))
+        for formats in ([], 'exe', ['EXE'], [None]):
+            with self.assertRaisesRegex(ValueError, 'input_formats'):
+                validate_manifest(recipe(dict(wine, input_formats=formats)))
+
+
+class DoctorTests(unittest.TestCase):
+    def doctor(self, data, missing):
+        stream = io.StringIO()
+        with mock.patch.object(cli, "published_recipe", return_value=(data, "game v1 release")), \
+                mock.patch.object(cli, "host_id", return_value="linux-arm64"), \
+                mock.patch.object(cli.tools, "missing_system_library", return_value=None), \
+                mock.patch.object(cli.tools, "installed", return_value=True), \
+                mock.patch.object(cli.shutil, "which", side_effect=which_without(*missing)):
+            code = cli.doctor("kartpad", "android", stream=stream)
+        return stream.getvalue(), code
+
+    def test_the_player_path_checks_only_what_the_player_installs(self):
+        text, code = self.doctor(recipe(SDL2, DEVELOPER), missing=("sdl2-config", "rg"))
+        self.assertEqual(code, 1)
+        self.assertIn("FIX  SDL2 (sdl2-config): Install SDL2: brew install sdl2", text)
+        self.assertNotIn("rg", text.replace("recipe", ""))
+
+    def test_installed_is_ok(self):
+        text, _code = self.doctor(recipe(SDL2), missing=())
+        self.assertIn("ok   SDL2 (sdl2-config): /usr/bin/sdl2-config", text)
+
+
+class MakeTests(unittest.TestCase):
+    def make(self, data, missing, which=None):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "home/games/game-v1.2.3"
+            source.mkdir(parents=True)
+            (source / "version.json").write_text(json.dumps({"version": "1.2.3", "build": 7}))
+            with mock.patch.object(cli, "catalog", return_value={"game": {"repo_url": "https://x/game"}}), \
+                    mock.patch.object(cli.tools, "tools_root", return_value=root / "home/tools"), \
+                    mock.patch.object(cli.tools, "install") as install, \
+                    mock.patch.object(cli.tools, "missing_system_library", return_value=None), \
+                    mock.patch.object(cli, "latest_release", return_value=("v1.2.3", {})), \
+                    mock.patch.object(cli, "published_recipe", return_value=(data, "release")), \
+                    mock.patch.object(cli, "source_complete", return_value=True), \
+                    mock.patch.object(cli, "manifest_for", return_value=(data, "repository")), \
+                    mock.patch.object(cli, "git", return_value="0" * 40), \
+                    mock.patch.object(cli.shutil, "which", side_effect=which or which_without(*missing)), \
+                    mock.patch.object(cli, "execute", return_value=1) as execute:
+                try:
+                    return cli.make("game", "android", None, root / "out"), install, execute
+                except ValueError as error:
+                    return str(error), install, execute
+
+    def game(self, *tools):
+        return {"name": "GoldenPad", "inputs": [{"type": "rom", "when": "in-app"}],
+                "requirements": {"tools": list(tools)},
+                "targets": {"android": {"steps": [], "tools": ["cmake"],
+                                        "hosts": {cli.host_id(): "experimental"}}}}
+
+    def test_a_missing_program_stops_before_any_download_and_says_how_to_install_it(self):
+        xdelta = {"name": "xdelta3", "player": True, "note": "Install xdelta: brew install xdelta"}
+        result, install, execute = self.make(self.game(SDL2, xdelta, DEVELOPER),
+                                             missing=("sdl2-config", "xdelta3", "rg"))
+        self.assertEqual(result, "GoldenPad needs these installed first:\n"
+                                 "  SDL2 (sdl2-config): Install SDL2: brew install sdl2\n"
+                                 "  xdelta3: Install xdelta: brew install xdelta\n"
+                                 "Then run PadMint again.")
+        install.assert_not_called()
+        execute.assert_not_called()
+
+    def test_developer_only_programs_are_not_the_players_business(self):
+        _result, install, execute = self.make(self.game(SDL2, DEVELOPER), missing=("rg",))
+        install.assert_called_once()
+        execute.assert_called_once()
+
+
+METAL = {"name": "xcrun", "label": "Metal Toolchain", "version_args": ["metal", "--version"], "player": True,
+         "note": "Install Xcode's Metal Toolchain: xcodebuild -downloadComponent MetalToolchain"}
+
+
+@unittest.skipIf(os.name == "nt", "the fake xcrun is a shell script")
+class ExitCodeTests(unittest.TestCase):
+    """padmint#7: xcrun is always on a Mac with Xcode, but xcrun metal fails until Xcode 26+'s
+    separately downloaded Metal Toolchain is installed. A failing version check means missing."""
+    def fake_xcrun(self, folder, code, message):
+        path = Path(folder) / "xcrun"
+        path.write_text(f"#!/bin/sh\necho '{message}' >&2\nexit {code}\n")
+        path.chmod(0o755)
+        self.xcrun = str(path)
+        return mock.patch.object(cli.shutil, "which", return_value=str(path))
+
+    def test_a_version_check_that_fails_counts_as_missing(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                self.fake_xcrun(folder, 1, "error: unable to find utility \"metal\", not a developer tool"):
+            self.assertEqual(cli.check_program(METAL), (False, METAL["note"]))
+            without_note = {"name": "xcrun", "version_args": ["metal", "--version"]}
+            self.assertEqual(cli.check_program(without_note),
+                             (False, "error: unable to find utility \"metal\", not a developer tool (exit 1)"))
+
+    def test_a_version_check_that_works_is_ok(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                self.fake_xcrun(folder, 0, "Apple metal version 32023.404 (metalfe-32023.404)"):
+            self.assertEqual(cli.check_program(METAL), (True, "Apple metal version 32023.404 (metalfe-32023.404)"))
+
+    def test_players_read_the_label_in_doctor_and_make(self):
+        with tempfile.TemporaryDirectory() as folder, self.fake_xcrun(folder, 1, "no metal"):
+            stream = io.StringIO()
+            with mock.patch.object(cli, "published_recipe", return_value=(recipe(METAL), "game v1 release")), \
+                    mock.patch.object(cli, "host_id", return_value="linux-arm64"), \
+                    mock.patch.object(cli.tools, "missing_system_library", return_value=None), \
+                    mock.patch.object(cli.tools, "installed", return_value=True):
+                cli.doctor("kartpad", "android", stream=stream)
+            self.assertIn("FIX  Metal Toolchain: Install Xcode's Metal Toolchain: "
+                          "xcodebuild -downloadComponent MetalToolchain", stream.getvalue())
+            result, install, _execute = MakeTests.make(self, MakeTests.game(self, METAL), missing=(),
+                                                       which=lambda _name: self.xcrun)
+        self.assertIn("  Metal Toolchain: Install Xcode's Metal Toolchain", result)
+        install.assert_not_called()
+
+    def test_a_label_is_text(self):
+        with self.assertRaisesRegex(ValueError, "label must be text"):
+            validate_manifest(recipe(dict(METAL, label="")))
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+@unittest.skipIf(os.name == "nt", "the fake vswhere is a shell script")
+class NoAnswerTests(unittest.TestCase):
+    """Visual Studio's vswhere.exe answers nothing, with exit 0, when no installed copy has the
+    requested parts; that is missing, not a version. Its path is never on PATH."""
+    def test_an_empty_answer_with_a_minimum_counts_as_missing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "vswhere"
+            path.write_text("#!/bin/sh\nexit 0\n")
+            path.chmod(0o755)
+            tool = {"name": "$PADMINT_TEST_VSWHERE", "version_args": ["-latest"], "min_version": "17",
+                    "player": True, "note": "Install Visual Studio Build Tools"}
+            with mock.patch.dict(os.environ, {"PADMINT_TEST_VSWHERE": str(path)}):
+                self.assertEqual(cli.check_program(tool), (False, "Install Visual Studio Build Tools"))
+                path.write_text("#!/bin/sh\necho 17.14.16\n")
+                self.assertEqual(cli.check_program(tool), (True, "17.14.16 (need 17+)"))
+
+
+class WindowsCopyTests(unittest.TestCase):
+    """A Windows copy is offered on Windows PCs only: it runs on the PC that makes it."""
+    def test_windows_is_offered_only_on_windows(self):
+        entries = {"examplepad": {"id": "examplepad", "name": "ExamplePad", "player_targets": ["android", "windows"]}}
+        with mock.patch.object(cli, "catalog", return_value=entries):
+            for host, platforms in (("windows-x86_64", ["android", "windows"]),
+                                    ("windows-arm64", ["android", "windows"]),
+                                    ("linux-x86_64", ["android"]), ("macos-arm64", ["android"])):
+                with mock.patch.object(cli, "host_id", return_value=host), \
+                        mock.patch.object(cli, "on_android", return_value=False):
+                    self.assertEqual(cli.player_games(), [("examplepad", "ExamplePad", platforms)], host)
+
+
+class MacCopyTests(unittest.TestCase):
+    """A Mac copy is offered on Apple Silicon Macs only: it runs on the Mac that makes it."""
+    def test_mac_is_offered_only_on_apple_silicon(self):
+        entries = {"examplepad": {"id": "examplepad", "name": "ExamplePad", "player_targets": ["ios", "macos"]}}
+        with mock.patch.object(cli, "catalog", return_value=entries):
+            for host, platforms in (("macos-arm64", ["ios", "macos"]), ("macos-x86_64", []),
+                                    ("windows-x86_64", []), ("linux-x86_64", [])):
+                with mock.patch.object(cli, "host_id", return_value=host), \
+                        mock.patch.object(cli, "on_android", return_value=False):
+                    expected = [("examplepad", "ExamplePad", platforms)] if platforms else []
+                    self.assertEqual(cli.player_games(), expected, host)
+
+    def test_the_menu_names_the_mac(self):
+        with mock.patch.object(cli, "host_id", return_value="macos-arm64"):
+            self.assertEqual(cli.platform_label("macos", "en"), "This Mac")
+            self.assertEqual(cli.platform_label("macos", "es"), "Este Mac")
+
+
+class IntelIphoneTests(unittest.TestCase):
+    def test_intel_catalog_flag_requires_boolean_and_ios_target(self):
+        from padmint import manifest
+        for changes in ({"ios_intel_mac": "yes"}, {"player_targets": ["android"]}):
+            with self.subTest(changes=changes), tempfile.TemporaryDirectory() as folder:
+                entry = {"id": "example", "repo_url": "https://example.com/game",
+                         "player_targets": ["ios"], "ios_intel_mac": True, **changes}
+                Path(folder, "example.json").write_text(json.dumps(entry))
+                with mock.patch.object(manifest, "CATALOG", Path(folder)):
+                    with self.assertRaisesRegex(ValueError, "ios_intel_mac"):
+                        manifest.catalog()
+
+    def test_intel_iphone_support_is_opt_in_and_does_not_enable_mac_apps(self):
+        entries = {
+            "enabled": {"name": "Enabled", "player_targets": ["android", "ios", "macos"],
+                        "ios_intel_mac": True},
+            "other": {"name": "Other", "player_targets": ["ios"], "ios_off_mac": True},
+        }
+        with mock.patch.object(cli, "catalog", return_value=entries), \
+                mock.patch.object(cli, "host_id", return_value="macos-x86_64"):
+            self.assertEqual(cli.player_games(), [("enabled", "Enabled", ["android", "ios"])])
+            self.assertEqual(cli.elsewhere(), [("other", "Other", ["ios"])])
+
+    def test_kartpad_is_offered_on_intel_and_checks_the_ios_sdk(self):
+        with mock.patch.object(cli, "host_id", return_value="macos-x86_64"):
+            platforms = next(p for game, _, p in cli.player_games() if game == "kartpad")
+            self.assertIn("ios", platforms)
+            manifest = catalog()["kartpad"]["manifest"]
+            cli.player_target(manifest, "ios")
+            self.assertIn("Xcode iOS platform",
+                          [cli.label(t) for t in cli.player_requirements(manifest, "ios")])
+            self.assertNotIn("macos", platforms)
+
+
+class PrivateNoteTests(unittest.TestCase):
+    """The finish line says the copy came from the player's game only when the build read it."""
+    def test_a_decompilation_built_without_the_game_file_says_only_that_it_holds_game_code(self):
+        recipe = {"kind": "decomp-patches", "inputs": [{"type": "psx-disc", "when": "in-app"}]}
+        self.assertEqual(cli.private_note(recipe), "keep_private_compiled")
+
+    def test_a_build_that_reads_the_players_game_says_it_was_made_from_their_copy(self):
+        for recipe in ({"kind": "disc-translation", "inputs": [{"type": "wii-disc"}]},
+                       {"kind": "emulator-shell", "inputs": [{"type": "steam-mac-install", "when": "in-app"}]},
+                       None):
+            self.assertEqual(cli.private_note(recipe), "keep_private")
+
+
+class IosPlatformTests(unittest.TestCase):
+    """An iPhone copy built with Xcode also needs Xcode's iOS platform, which Xcode installs separately."""
+    XCODE = {"name": "xcodebuild", "version_args": ["-version"]}
+
+    def recipe(self, *tools):
+        return {"requirements": {"tools": list(tools)}}
+
+    def names(self, recipe, platform_name):
+        with mock.patch.object(cli, "host_id", return_value="macos-arm64"):
+            return [cli.label(tool) for tool in cli.player_requirements(recipe, platform_name)]
+
+    def test_an_xcode_iphone_build_checks_the_ios_platform(self):
+        self.assertIn("Xcode iOS platform", self.names(self.recipe(self.XCODE), "ios"))
+
+    def test_a_mac_copy_does_not_need_the_ios_platform(self):
+        self.assertNotIn("Xcode iOS platform", self.names(self.recipe(self.XCODE), "macos"))
+
+    def test_a_recipe_that_already_checks_the_sdk_is_not_asked_twice(self):
+        own = {"name": "xcrun", "version_args": ["--sdk", "iphoneos", "--show-sdk-path"], "player": True,
+               "label": "Xcode iOS SDK", "note": "Add iOS in Xcode"}
+        self.assertEqual(self.names(self.recipe(self.XCODE, own), "ios"), ["Xcode iOS SDK"])
+
+    def test_an_iphone_copy_without_xcode_needs_no_ios_platform(self):
+        self.assertEqual(self.names(self.recipe({"name": "python3"}), "ios"), [])
+
+    def test_off_a_mac_xcode_requirements_do_not_apply(self):
+        xcode_on_mac = dict(self.XCODE, hosts=["macos-arm64"])
+        with mock.patch.object(cli, "host_id", return_value="windows-x86_64"):
+            self.assertEqual(cli.player_requirements(self.recipe(xcode_on_mac), "ios"), [])
+
+    def test_xcode_for_apple_targets_is_not_asked_for_an_android_pack(self):
+        xcode = dict(self.XCODE, player=True, note="Install Xcode", targets=["ios", "macos"])
+        self.assertIn("Xcode", self.names(self.recipe(xcode), "macos"))
+        self.assertIn("Xcode iOS platform", self.names(self.recipe(xcode), "ios"))
+        self.assertEqual(self.names(self.recipe(xcode), "android"), [])
+
+    def test_off_a_mac_the_ios_platform_is_never_asked_for(self):
+        # KartPad 0.7.14 lists Xcode with no hosts; Windows and Linux build its iPhone copy
+        # with PadMint's LLVM, so they must not be told to install Xcode's iOS platform.
+        for host in ("windows-x86_64", "windows-arm64", "linux-x86_64", "linux-arm64"):
+            with mock.patch.object(cli, "host_id", return_value=host):
+                self.assertEqual(cli.player_requirements(self.recipe(self.XCODE), "ios"), [], host)
+
+
+class MissingProgramBeforeDownloadTests(unittest.TestCase):
+    """A missing program the player installs stops the build before the game's source downloads."""
+    def test_missing_program_stops_before_the_source_download(self):
+        recipe = {"name": "ExamplePad", "inputs": [{"type": "rom", "when": "in-app"}],
+                  "targets": {"ios": {"hosts": {"macos-arm64": "experimental"}}},
+                  "requirements": {"tools": [{"name": "xcodebuild", "version_args": ["-version"], "player": True,
+                                              "note": "Install Xcode"}]}}
+        entries = {"examplepad": {"id": "examplepad", "repo_url": "https://github.com/example/examplepad"}}
+        with mock.patch.object(cli, "catalog", return_value=entries), \
+                mock.patch.object(cli, "host_id", return_value="macos-arm64"), \
+                mock.patch.object(cli, "latest_release", return_value=("v1.0.0", {})), \
+                mock.patch.object(cli, "published_recipe", return_value=(recipe, "examplepad v1.0.0 release")), \
+                mock.patch.object(cli, "player_target", return_value=recipe["targets"]["ios"]), \
+                mock.patch.object(cli, "check_program", return_value=(False, "not found")), \
+                mock.patch.object(cli, "release_source") as download, \
+                mock.patch.object(cli, "report"):
+            with self.assertRaisesRegex(ValueError, "needs these installed first"):
+                cli._make("examplepad", "ios", None, Path(tempfile.gettempdir()))
+            download.assert_not_called()

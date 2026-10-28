@@ -1,0 +1,17 @@
+cmake_minimum_required(VERSION 3.20)
+project(ido_generator C CXX)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+file(GLOB_RECURSE rabbitizer_c CONFIGURE_DEPENDS "${IDO_SOURCE}/tools/rabbitizer/src/*.c")
+file(GLOB_RECURSE rabbitizer_cpp CONFIGURE_DEPENDS "${IDO_SOURCE}/tools/rabbitizer/cplusplus/src/*.cpp")
+add_executable(ido-recomp "${IDO_SOURCE}/recomp.cpp" ${rabbitizer_c} ${rabbitizer_cpp})
+target_include_directories(ido-recomp PRIVATE "${IDO_SOURCE}"
+    "${IDO_SOURCE}/tools/rabbitizer/include" "${IDO_SOURCE}/tools/rabbitizer/cplusplus/include")
+target_compile_definitions(ido-recomp PRIVATE RAB_SANITY_CHECKS=1 _CRT_SECURE_NO_WARNINGS)
+set_property(TARGET ido-recomp PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+# Upstream RELEASE=1 uses -Os, but deliberately does not disable assertions.
+if(MSVC)
+    target_compile_options(ido-recomp PRIVATE /UNDEBUG)
+else()
+    target_compile_options(ido-recomp PRIVATE -UNDEBUG)
+endif()

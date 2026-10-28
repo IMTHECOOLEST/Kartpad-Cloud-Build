@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "ectopad",
+  "repo_url": "https://github.com/chrissotraidis/ectopad",
+  "name": "EctoPad",
+  "game": "Metroid Prime (GameCube)",
+  "plays_on": [
+    "iphone",
+    "ipad",
+    "mac"
+  ],
+  "later": {
+    "status": "paused",
+    "text": "EctoPad is paused. It is built on Metaforce, whose developers made its source private until their own public release, so PadMint can't download what a build needs. PadMint will offer EctoPad again once Metaforce's source is public.",
+    "translations": {
+      "es": {
+        "text": "EctoPad está en pausa. Se basa en Metaforce, cuyo código sus desarrolladores han hecho privado hasta su propio lanzamiento público, así que PadMint no puede descargar lo que necesita la compilación. PadMint volverá a ofrecer EctoPad cuando el código de Metaforce sea público."
+      },
+      "pt": {
+        "text": "O EctoPad está em pausa. Ele é feito com o Metaforce, cujo código os desenvolvedores tornaram privado até o próprio lançamento público, então o PadMint não consegue baixar o que a compilação precisa. O PadMint voltará a oferecer o EctoPad quando o código do Metaforce for público."
+      }
+    }
+  },
+  "notes": "Paused 24 Oct 2026: AxioDL made Metaforce and Zeus private until their public release, so scripts/bootstrap-workspace.sh cannot fetch them. Restore the build entry from git history (catalog/ectopad.json before this change) when they are public again.",
+  "manifest": null
+}

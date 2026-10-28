@@ -1,0 +1,481 @@
+# PadMint decisions
+
+## D0. The name is PadMint (30 Sep 2026)
+
+This project was first published as PadForge, a name an established Windows
+controller remapper had used since February 2026. Renamed to PadMint at its
+maintainer's request (padmint#25): repository, command, launchers and release
+files. For existing players and game repositories, PadMint moves the old
+`~/.padforge` folder once (keeping downloaded tools), still reads a checkout's
+`padforge.json`, and also sets the `PADFORGE_*` variables for build steps
+until every game repository reads `PADMINT_*`.
+
+Recorded 29 Sep 2026 during the overnight run. Evidence is from this Mac; items
+marked *unverified* have not been demonstrated. Scanner results and build
+feasibility are technical findings, not copyright or licensing clearance.
+
+## D1. Command line first; the GUI is a thin layer over the same engine
+
+- **Engine:** the Python CLI (`python3 -m padmint`). Python runs on macOS,
+  Windows and Linux, needs no packages, and already implements locking,
+  progress relay, cancellation and build records.
+- **First GUI:** `padmint ui`, a local browser page served by Python's standard
+  library on `127.0.0.1`, reading the same `progress.jsonl` events. No Electron,
+  Tauri or native toolkit, so there is nothing extra to sign or notarize per OS.
+- **Later:** a downloadable one-file bundle (`.dmg`/`.exe`/AppImage) once a
+  complete build works through the CLI and players need a no-Python install.
+- **Why:** one engine for all three operating systems; the interface cannot
+  drift from what the CLI actually does; the expensive part (tool setup and
+  multi-hour builds) is the same either way.
+- **Implemented 29 Sep:** `python3 -m padmint ui` serves the page on
+  `127.0.0.1` with a random token and a Host check, runs `doctor`/`plan` in
+  process and starts builds as `python3 -m padmint build` subprocesses (one at
+  a time, cancellable), showing stages from the same events. Checked in the
+  in-app browser against StarshipPad: current commit, doctor Ready, plan steps.
+- **Player window, 3 Oct:** players found the terminal confusing (a Windows
+  player reading it through a translator saw only download lines and did not
+  know what came next). Double-clicking PadMint now opens the page as a player
+  window: game, own game file (the system's Open dialog, files found in
+  Downloads, or a typed path), device, then three plain steps, Cancel, Copy
+  details and the game's next steps, in English, Spanish or Portuguese. It runs
+  `python -m padmint make` as a subprocess, so it can do nothing the terminal
+  cannot; it shows no game art or logos. Phones, scripts, a Linux computer
+  without a desktop, `padmint start` and `PADMINT_TERMINAL=1` keep the terminal
+  questions. The developer form (checkout, commit, plan) is gone; developers use
+  `plan` and `build` directly.
+- **Phones and apps without a build, 3 Oct:** in Termux, `padmint` opens the same
+  page in the phone's browser with Termux's `termux-open-url` (Ubuntu inside
+  Termux sees Termux's files and shares its network). The page hides Choose file
+  (there is no Open dialog) and lists the game files in Download. Checked on an
+  API 36 emulator: page, file check, build start and Cancel. Apps whose published
+  app needs no game code (catalog `download`) appear under **No build needed**
+  with download and import steps, while their tracker rows allow their existing
+  releases; RAtouch (notice review), UTP (draft releases only) and OpenRCT2Touch
+  (no iPad download) are not listed.
+
+## D4. Manifests may list existing scripts as ordered steps
+
+A target declares either one `command` (with optional modes/options) or
+`steps` (stage name + argument list). PadMint runs steps in order, emits the
+stage events itself, rechecks the checkout before each step and stops at the
+first failure. Most ports already have working scripts, so adding a game is a
+manifest-only change rather than a new wrapper in every repository.
+
+## D2. Games plug in through a manifest they own
+
+- Each game repository owns `padmint.json` (schema in
+  [`padmint/manifest.py`](../padmint/manifest.py)): identity, kind, accepted
+  inputs, host/target matrix with per-cell status, entry commands, stages,
+  output checks and publication policy.
+- PadMint's catalog (`catalog/*.json`) pins each supported game to a
+  repository URL and a reviewed commit. Adding a game = manifest in its repo +
+  one catalog entry. Game-specific translation, patches and packaging stay in
+  the game repository; PadMint does not copy them.
+- Kinds: `disc-translation` (static recompilation), `emulator-shell`,
+  `decomp-patches` (fetch upstream decompilation, apply own patches),
+  `upstream-engine` (fetch other projects' engines), `clean-engine`.
+
+## D3. PadMint is the home of the compliance gate
+
+- `padmint audit <path>` runs the release gate (copied from the private
+  `~/.codex/release-gate/release_gate.py`, which remains the reference until the
+  owner retires it). Every PadMint package step runs it automatically and
+  records the result: personal builds must be labeled *personal, not
+  publishable*; source archives must pass.
+- A gate failure on anything intended for publication is a stop.
+- **Limit found 29 Sep:** the gate recognizes translated code by address-named
+  symbols, keys, section markers and provenance. Decompilation ports compile
+  named functions, so their personal apps can PASS (BellPad: 0 symbols). For
+  those ports, `publication.public_binaries: false` in the manifest is the
+  safeguard; a gate PASS is never permission to publish a decompilation build.
+
+## D5. One release formula for every game (owner decision, 29 Sep 2026)
+
+Nothing containing game code, disc data or keys is published. Everything else
+is, in the same shape for every repo and every update: one version (the repo's
+`version.json`), assets named `<Game>-vX.Y.Z-...`, and `SHA256SUMS`.
+
+| Kind | Published | Player uses PadMint to |
+|---|---|---|
+| No game code (clean engines) | Full APK/IPA | Nothing |
+| Translated code (KartPad, BlueWake, SunPad...) | Empty app + recipe | Build the game pack from their own disc |
+| Decompilation (HarkinianPad, MaskPad...) | Recipe only | Build the whole app from public source + their ROM |
+
+Why: the translated or decompiled game code is the only part that cannot be
+shared; splitting it out keeps everything else a normal download with normal
+in-place updates. On Android the empty app keeps the owner's signing key and
+loads the pack from its own storage, so updates and saves are unaffected.
+Translated ports share three recipes (WiiCompiled, Dolphin/DolRecomp,
+N64Recomp+RT64) instead of one per repo. PadMint is one app for every game,
+released on its own schedule.
+
+## D6. The player's computer builds only the game pack (29 Sep 2026)
+
+With D5, a player's Windows, Mac or Linux computer never builds the app itself.
+For a translated-code game it extracts the disc, translates it, and compiles
+one library against the published app's runtime:
+
+- Android: the Android NDK's compiler, CMake and Ninja. No Gradle, Java or
+  Android SDK. The player copies the pack to the phone and picks it in the app;
+  it loads from the app's own storage.
+- iPhone: the pack is a dylib that PadMint puts inside the empty IPA
+  (`Frameworks/`); the player's sideloading tool signs the IPA as usual.
+
+Why: it is the smallest toolset that works on all three systems, and the
+published app, its signing and its updates stay the owner's.
+
+Rule for every game pack (learned on KartPad): runtime state that lives in
+headers (C++ `inline` variables, including `thread_local` ones and statics
+inside inline functions) must exist once, in the app. A pack compiled with its
+own copies runs, but reads state the app never sets (KartPad's first pack
+aborted with "CurrentCpuContext is NULL"). The runtime declares such variables
+`extern` when `MKW_GAME_PACK_MODULE` is set, and the app references each one
+so it is always exported. Check for regressions by listing data symbols that
+both the pack and the app define; the answer must be none (a pure lookup cache
+is the only allowed exception).
+
+## D7. PadMint downloads its own pinned tools (29 Sep 2026)
+
+`padmint tools GAME --target TARGET` installs what that target lists (Git on
+Windows, .NET 8, CMake, Ninja, the Android NDK, nodtool) into PadMint's own
+folder (`~/.padmint/tools`), never system-wide. Every download is pinned in
+`padmint/tools.lock.json` with the publisher's own digest (GitHub release
+digests, CMake's SHA-256 list, Google's SDK index, Microsoft's release
+metadata); `scripts/update-tools-lock.py` regenerates it. Builds get the tools
+first on PATH plus `ANDROID_NDK_ROOT` and `DOTNET_ROOT`.
+
+Why: a player on a clean Windows PC should not have to find and install six
+developer tools by hand, and pinning keeps every player's build identical.
+At the time of this decision, Linux game packs built only on x86_64. That
+restriction was later removed with the pinned ARM Linux toolchain. Consult the
+current README and tools lock for supported host/target combinations; the old
+Google NDK availability observation is not a current PadMint host restriction.
+
+.NET runs with invariant globalization (`set` in the lock): the Linux run
+stopped because a plain Ubuntu has no libicu, and a system language that writes
+decimals with a comma must not change generated code.
+
+## D8. Players get a folder with a launcher, not an installer (29 Sep 2026)
+
+PadMint's release is three ZIP files: Windows (with Python's official
+embeddable package, pinned by python.org's SHA-256, so nothing else to
+install), macOS and Linux (the system Python). Each holds the same `padmint`
+package plus a launcher: `PadMint.cmd`, `PadMint.command`, `padmint.sh`.
+Since 0.4.0 the unzipped folder holds only the launcher, `Start here.txt` and
+an `app` folder with everything else, so players see what to open.
+Starting PadMint with no command asks only what it cannot know: the game (and
+the phone type when there is a choice), the player's game file (drag it into
+the window) and the folder to save in. `player_targets` in a catalog entry is
+what makes a game appear there.
+
+Why: this is D1's "no-Python install" with nothing to sign, notarize or keep in
+step per operating system, and it reuses the tested CLI. ZIP everywhere
+because the release gate opens ZIP archives only. Unsigned launchers still meet
+SmartScreen and Gatekeeper warnings; the README says how to get past them. A
+signed desktop app is a later step if players need it.
+
+## D9. iPhone builds target iOS 15 or later (29 Sep 2026)
+
+Xcode 27, the Xcode PadMint's iPhone builds use, supports iOS 15.0 to 27.0
+only; a project that asks for 14.0 fails at CMake configure (HarkinianPad and
+MaskPad showed it, from their upstreams' cached 10.15 macOS target). Ports that
+defaulted to 14.0 move to 15.0, still overridable. iOS 15 runs on the same
+iPhones and iPads as iOS 14 (iPhone 6s and SE, iPad Air 2, iPad mini 4 and
+later), so no device loses support; a device still on 14 needs a system update.
+
+Why: a player's PadMint build must succeed with the current Xcode. Recorded
+as a loop decision (not in the owner's stop list); reversible per port with its
+`DEPLOYMENT_TARGET` override.
+
+## D10. N64 ports publish the recipe only (29 Sep 2026)
+
+The N64 ports (GoldenPad, BananaPad, BearBirdPad, SnapPad, DinoPad and the
+like) compile the code translated from the ROM straight into the app binary
+through CMake; they have no separate game module. They therefore follow the
+decompilation row of D5: the release publishes the recipe, and PadMint builds
+the whole app from the player's own ROM.
+
+Why: splitting each N64 port into an empty app plus a loadable module (the
+BlueWake and KartPad pattern) would be new engineering per port, and it gives
+the player nothing: these are iPhone/iPad-only apps, so the player needs an
+Apple Silicon Mac either way, and nothing with game code is published in either
+shape. The N64 recipe (N64Recomp + RT64) stays shared across the ports. If a
+port gains Android or a Windows-built iPhone path later, revisit this for it.
+
+## D11. Published Dolphin-based apps carry no Nintendo keys (30 Sep 2026)
+
+Dolphin sets built-in Wii keys (retail, Korean and dev common keys, SD key) as
+IOS defaults, so any empty app linking the Dolphin core fails the content check.
+The Dolphin-based ports SunPad and MeleePad (BlueWake's published app already
+passes) build their iOS core with `PADMINT_PUBLIC_APP`, which leaves those keys zeroed
+in `IOSC.cpp` on each port's RecompCore branch. The published app is also the
+one PadMint completes for players, so there is one build, not two.
+
+Why: GameCube games never use these keys, and a Wii title would read the
+player's own `keys.bin`, the same pattern as KartPad's Android disc import
+asking for the player's `common-key.bin`. A compile switch in the fork is one
+reviewed change per port; binary patching or a second "public" build would be
+new machinery.
+
+## D12. iPhone game packs on Windows and Linux use LLVM and open-source headers (30 Sep 2026)
+
+For a game whose published IPA loads a player-built game pack (KartPad), the
+game names `libcxx`: libc++'s headers from LLVM 21.1.8, with downloads for
+Windows and Linux (arm64 and x86_64) only. There it brings, as companions,
+`llvm` (21.1.8 for those hosts, with `ld64.lld` and `llvm-install-name-tool`
+added) and six Apple open-source archives (`apple-libc`, `apple-xnu`,
+`apple-libpthread`, `apple-libmalloc`, `apple-libplatform`,
+`apple-availability`; APSL 2.0), each unpacked only where the game needs it.
+The game assembles its SDK from them (KartPad:
+`builder/kartpad_builder/ios_sdk.py`, which records every file's origin and
+license). A Mac keeps using Xcode and downloads none of these; its LLVM
+entries (for N64 patch code) are unchanged. Naming `libcxx` rather than `llvm`
+keeps Macs from downloading LLVM for iPhone builds.
+
+Apple publishes no digest for these archives, so the lock pins the GitHub
+archive of each release tag's commit and the SHA-256 that
+`scripts/update-tools-lock.py` computes (two downloads matched). Release order:
+a game manifest naming `libcxx` is rejected by PadMint releases without it, so
+PadMint ships this before the game does.
+
+Why: Apple's SDK may only be used on Apple computers; these parts are
+redistributable and are downloaded from their publishers, never re-hosted.
+Checked with KartPad 0.7.2 on Linux arm64 and Windows 11 ARM64 (arm64 Python)
+through to a race on an iPhone 14.
+Also: a changed lock entry now installs again, a download missing a listed
+file installs nothing, and tar downloads unpack on Windows.
+
+## S1. iPhone/iPad module without Xcode or Apple's SDK: plausible, partly verified
+
+Update 3 Oct 2026: shared by every game, see D13.
+
+## D13. One iPhone module pipeline for every game (3 Oct 2026)
+
+D12's open-source SDK assembly moves from KartPad's builder into PadMint
+(`padmint/ios_module.py`, GPL-3.0-or-later like the KartPad code it came from, same
+author). A recipe declares `ios_module`; PadMint prepares the SDK and toolchain,
+the game compiles its library, and PadMint checks the library's imports against the
+published app and inserts it. The same path runs on Windows, Linux and Apple Silicon
+Macs: Macs need no Xcode for it. The open-source archives are identical on every
+computer, so their lock entries are marked `any_host` and only `ios_module` recipes
+use them on a Mac; existing recipes download exactly what they did before.
+
+Why: Apple's SDK may only be used on Apple computers, so a published app without game
+code plus a game library built from open-source parts is the only legally clean way to
+make iPhone apps on other computers. One shared implementation replaces per-game copies
+(KartPad's, SpaghettiPad's draft), so every game moved onto it inherits fixes. CI runs
+`scripts/ios-module-probe.py` on native Windows, Linux and macOS runners.
+
+Update 30 Sep 2026: done for KartPad, see D12.
+
+Test (BlueWake, private scratch, nothing committed): one real translated chunk
+(1.47 MB C source) plus all eight runtime/export sources of the game module were
+compiled with Homebrew's open-source clang 22 for `arm64-apple-ios17.0` using
+`-nostdlibinc` and a 5-file header shim of standard C prototypes written for
+the test. Only 11 C-library symbols are needed from the system. `ld64.lld`
+linked them against a hand-written 13-symbol `libSystem.tbd` stub into an iOS
+Mach-O dylib: platform iOS, min 17.0, only `/usr/lib/libSystem.B.dylib`
+loaded (same as the Xcode-built module), exporting `staticrecomp_get_module`
+and `staticrecomp_get_rel_data`. Ad-hoc signing and `codesign --verify --strict`
+passed. The chunk took 244 s at -O2 under load ~230.
+
+What this means: BlueWake's iOS app already loads the game from
+`Frameworks/gGZLE01_recomp.dylib` at runtime. A runtime-only app (the gate
+passes BlueWake's app without that file) plus a module built on the player's
+computer with LLVM (available for Windows, Linux and macOS), inserted before
+signing with Sideloadly/AltStore/SideStore or `zsign`, would let Windows and
+Linux users make iPhone builds without Xcode.
+
+Unverified: a complete 808-unit module linked this way; loading it on a device;
+whether the translator (DolRecomp) and training host build on Windows/Linux;
+local optimization training off macOS. KartPad does **not** have this split
+today: its translated C++ is linked statically into the app
+(`add_library(kartpad_g7_translated STATIC)`), so it needs a module refactor
+first. Publishing a runtime-only IPA/APK is an owner decision.
+
+Later the same night: SunPad already works this way in development. Its app
+loads `gGMSE01_recomp.dylib` from the app container, generated locally by
+`scripts/ios-build-core-device.sh` and provisioned separately from the app
+(`docs/BUILDING.md`). So two of the static-recompilation ports (BlueWake,
+SunPad) already separate the game module from the app. For sideloading, the
+module would ship inside the IPA's `Frameworks/` so the signing tool re-signs
+it with the app.
+
+MeleePad goes further: its retired Preview 7 shipped an unsigned *module-free*
+IPA shell, with the game module generated locally from the player's disc
+(`docs/FAQ.md`). The audit recorded that shell as publishable once Dolphin's
+common keys are removed. So three ports (BlueWake, SunPad, MeleePad) already
+separate the app from the game module, which is the design a runtime-only
+public app would need.
+
+## D14. Steps choose their systems; four parts make any game buildable off a Mac (4 Oct 2026)
+
+A recipe step may list the systems it runs on (`"on": ["windows"]`); without `on` it
+runs everywhere, so existing recipes are unchanged. Steps for different systems may share
+a stage name, and every runnable host must have a step. `steps_here()` picks the steps
+in validation, planning and the build.
+
+Why: the game repositories already have the pieces, in different languages per system.
+BlueWake translates with `scripts/builder/build.sh` on Macs and Linux and with
+`scripts/windows/build.py` on Windows, and both produce the same verified composite
+source; the iPhone library build after that is identical on every computer (D13). One
+recipe with per-system source steps reuses that work instead of rewriting each game's
+scripts in one language or shipping a Unix shell for Windows (MinGit's `sh` lacks
+`sha256sum`, `nproc`, `tar` and `patch`, and a shell does not bring the host compiler
+the translators need).
+
+The per-game work is then the same four parts, in `docs/ADDING_A_GAME.md`: a published
+app with no game code, source steps per system, a library build with `{ios_toolchain}`,
+and `ios_module`. Families share them: the GameCube and Wii ports follow BlueWake, the
+engine ports SpaghettiPad, and the N64 ports need the app split first (D10).
+
+## S2. Android builds from Linux/Windows: conditional yes
+
+KartPad's Android build reuses the same translation output as iOS and uses
+cross-platform tools (Gradle, NDK, CMake, .NET 8 translator, Python). It is
+deliberately locked to Apple Silicon macOS by `scripts/check-android-host.sh`
+(`uname` check), plus Mac-specific paths: JDK `Contents/Home`, NDK
+`prebuilt/darwin-x86_64`, Homebrew `dotnet@8`. The host check also requires the
+emulator and system images, which a build does not need. Estimated work:
+host-neutral paths and a build-only host check; Windows via WSL2 for the bash
+scripts. Not built on Linux/Windows tonight (Docker daemon not running; the Mac
+was under another agent's build).
+
+Concrete plan (surveyed 29 Sep, not implemented): the Mac assumptions sit in
+about 15 `scripts/*android*.sh` files and follow four patterns. Add one sourced
+helper, `scripts/android-host.sh`, that sets per host: `JAVA_HOME`
+(`.android-bootstrap/jdk-*/Contents/Home` on macOS, `jdk-*` on Linux), the
+default SDK root (`~/Library/Android/sdk` vs `~/Android/Sdk`), the NDK prebuilt
+directory (`darwin-x86_64` vs `linux-x86_64`) and a `sha256` function
+(`shasum -a 256` vs `sha256sum`). Pin a second Temurin JDK archive and
+SHA-256 for linux-x64 in `android-toolchain-versions.sh` and select it in
+`bootstrap-android-host.sh`. Split `check-android-host.sh` into build
+requirements (SDK platform, build-tools, NDK, CMake, JDK) and device/emulator
+extras, and accept `Linux x86_64` for builds. Verify first on a Linux x86_64
+machine or container, then Windows through WSL2.
+
+## S3. Runtime-only APK plus player module
+
+**Verified 29 Sep 2026 (emulator, Android 16 / API 36, targetSdk 36):** an app
+copied a native library into its private `files/` directory and loaded it with
+`System.load`. That library depended on a library shipped in the APK, its static
+registrar called into the host library at load time, and JNI calls in both
+directions worked (`PACKPROBE OK ... registered=42 value=70`). This is the
+KartPad game-pack pattern, so the empty APK can keep the owner's signing key and
+normal in-place updates. The re-signing route below is no longer needed for
+Android.
+
+Android 10+ restricts executing code from an app's writable data directory for
+apps targeting API 29+; whether `dlopen` from app storage is reliable is
+*unverified* and not relied on. Preferred route mirrors iPhone: insert the
+player's module into the runtime APK's `lib/arm64-v8a/` on the computer, then
+zipalign and sign with a key generated on that machine (`apksigner`,
+cross-platform). Requires the same module split as S1.
+
+## Resulting direction
+
+1. Now: Mac builds everything (iPhone/iPad, Mac, Android) through PadMint.
+2. Next: host-neutral Android builds (Linux, then Windows via WSL2).
+3. Then, owner decision: runtime-only public apps plus player-built modules,
+   starting with BlueWake (already split), then KartPad after a module refactor.
+
+## D15. Any device from any computer is the goal; off-Mac work is paused (owner decision, 5 Oct 2026)
+
+**The goal.** PadMint lets anyone mint their own copy of a game on the hardware they
+have, for the device they play on: an iPhone/iPad IPA from Windows or Linux, an
+Android APK from a Mac or Linux, and so on, for every game in the catalog.
+
+**Now: paused, by choice.** Players mostly ask for KartPad and BlueWake, and both
+already ship ready-to-play downloads (KartPad: Android, iPhone/iPad, Mac; BlueWake:
+Windows). Players rarely want a multi-hour build on a PC, and building every route
+first would not create demand for it. Until that changes, PadMint's job is to make
+the builds that exist work well:
+
+- iPhone/iPad copies on an Apple Silicon Mac, for every buildable game.
+- Mac copies where a game offers one (CTRPad, HaloPad).
+- KartPad's existing routes: Android game data on Windows, Linux and Mac; iPhone
+  builds on Windows and Linux (experimental).
+- Windows players: the game's ready-to-play download where one is published
+  (BlueWake). PadMint does not build Windows copies for them.
+
+`scripts/audit-catalog.py` keeps these routes honest: it checks every game's
+published recipe the way a player's PadMint reads it. Run it after any catalog,
+recipe or PadMint change.
+
+**Why the goal is large (technical debt).** Apple's iPhone SDK, which the
+iPhone-specific parts of every app need (UIKit, Metal or GLES, audio, controllers,
+the file picker), may only be used on Apple computers. Game code itself is plain
+C/C++, and PadMint already compiles it for iPhone on Windows, Linux and Macs with
+open-source parts (D12, D13). So an iPhone copy made off a Mac needs each game split
+into a published app with no game code, built once on a Mac, plus a game library
+compiled on the player's computer and inserted by PadMint (D14). PadMint's half
+exists, and KartPad uses it end to end. The other half is in each game's code;
+today most games build as one combined app. Families share the work:
+
+| Family | Games | State on 5 Oct 2026 | Rough work |
+|---|---|---|---|
+| Harbour Masters engine (libultraship) | SpaghettiPad, HarkinianPad, MaskPad, StarshipPad, BrawlerPad, PaperPad | SpaghettiPad draft #29 builds the game library on Windows and Linux; a test copy reached its race demo on an iPhone | 2–3 days to finish SpaghettiPad, then 1–2 days per game |
+| N64 recompilations | GoldenPad, AnnePad, BananaPad, BearBirdPad, DinoPad | Not split; the translator must also run on Windows and Linux (these read the ROM during the build) | 2–4 days for GoldenPad and the translator, then ½–1 day each |
+| GameCube/Wii recompilations | BlueWake, SunPad, MeleePad (KartPad done) | BlueWake (#42) and SunPad (#57) build their library off a Mac in drafts | About a day for those two; MeleePad 2–3 days (Rust, extra files) |
+| One-off engines | CTRPad, BellPad, BallPad, BarrelPad | Not split; CTRPad compiles everything as one unit (`main.c`) | 2–4 days each |
+| Mac only by design | AgePad, HaloPad | Package or translate the player's own Mac/PC game | Not planned |
+
+PadMint itself would also need: inserting several files into an app (MeleePad), a
+release step that publishes each game's app without game code next to its recipe
+and checks the pair, Windows install steps (Sideloadly), and an audit column for
+off-Mac readiness. That is about 2–3 days. The whole catalog is roughly 4–8 weeks of
+focused work, plus a device check per game. Android copies of games other than
+KartPad need an Android port first, which none has. Publishing the apps without game
+code for the decompilation ports changes D5 (recipe only) and needs an owner
+decision.
+
+Rejected shortcuts: building on a cloud Mac uploads players' game files and breaks
+"nothing is uploaded"; extracting Apple's SDK to use on a PC breaks Apple's license.
+
+**Revisit when** players ask for a specific game off a Mac, or a family's reference
+port gets finished for other reasons. Start with the family that unlocks the most
+games (the Harbour Masters engine, via SpaghettiPad #29). Tracking issue: #75. The
+drafts stay open as they are.
+
+## D16. A separate MIPS patch compiler on Windows (26 Oct 2026)
+
+The official LLVM 21.1.8 Windows compilers omit the MIPS backend. N64 ports
+that compile patches can name `mips-clang` in their recipe's tools. It sets
+`PADMINT_MIPS_CC` to an absolute compiler path on Windows x64 and ARM64 and
+is skipped on other hosts. It changes neither PATH nor `PADMINT_LLVM_ROOT`:
+the existing native LLVM still compiles iPhone modules and links MIPS objects.
+Games must explicitly use this compiler for their patches and check the
+required target before starting a lengthy source build.
+
+The pin is LLVM 18.1.8's official Windows x64 archive, also usable through
+Windows 11 ARM64 emulation. PadMint selects clang, its resource headers and
+three app-local VC runtime DLLs. The first download is 981,666,720 bytes;
+about 134 MB remains after installation. Interrupted extraction retains
+its partial staging folder until the next attempt, as other managed tools do.
+
+This older release has no GitHub asset digest. Its downloaded archive was
+hashed and matched [Skia's recorded checksum for the same official URL](https://skia.googlesource.com/skia.git/+/f2f986116f5177930e3bae7cdf7be79866cffb79%5E%21/).
+The updater preserves that explicit historical pin. Do not replace it with a
+newer Windows LLVM based on version alone: `scripts/mips-compiler-probe.py`
+compiles and links a synthetic MIPS2/o32 patch with resource headers, validates
+the ELF target and ABI, and checks that the iPhone compiler stays unchanged.
+CI runs this on Windows x64 and ARM64 alongside the iPhone module probe.
+Each game still needs its own full build and runtime evidence.
+
+Release order: ship PadMint with this tool before publishing any game recipe
+that names it. Older PadMint releases reject the unknown tool before building.
+
+## D17. Windows build hardening resumes (26 Oct 2026)
+
+The owner requested sustained work to make every offered game buildable from
+Windows, beginning with SquirrelPad. This resumes implementation beyond the
+5 October pause in D15. Prefer fixes to the shared runner, recipe contracts,
+managed tools and portable private-module builds that future releases can reuse.
+Preserve the existing Mac routes and private inputs.
+
+Record each host architecture and the actual validation performed. Native CI,
+emulated tool execution, private game builds, device launch and gameplay are
+separate evidence. Drafts and completed builds do not authorize game releases,
+device deployment or broader published catalog support. A game release still
+requires its current-main PadMint player checks before tagging and after
+publication, along with its repository's review and content gates.

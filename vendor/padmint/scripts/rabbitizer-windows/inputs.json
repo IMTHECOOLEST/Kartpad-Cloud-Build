@@ -1,0 +1,52 @@
+{
+  "source": {
+    "name": "rabbitizer",
+    "version": "1.14.3",
+    "file": "rabbitizer-1.14.3.tar.gz",
+    "size": 177966,
+    "sha256": "5b830818713634ecf5debceb7519072e456f76fc61f93e4627b9d955f8b8c5f9",
+    "url": "https://files.pythonhosted.org/packages/7d/33/7b9dc071085e07a4c80fab75830a20de42498fffe8ae2780952fefd14178/rabbitizer-1.14.3.tar.gz"
+  },
+  "patched_files": {
+    "rabbitizer/rabbitizer_type_RegistersTracker.c": {
+      "before_sha256": "a68bb025c5282d26fb6fbf1bb3c984171018d956fa1ca73caf6ee556b99529ee",
+      "after_sha256": "aed26ccd05b09748eeaf474d3f761991435ad67ee04c042ae357a364e36beac3"
+    },
+    "rabbitizer/rabbitizer_submodule_Utils.c": {
+      "before_sha256": "654553490e38179a992e748cd4dc4cb91a3db81c8eafafb4d6fbad8e74c5e0b5",
+      "after_sha256": "b0ae77d2562383e9c8388d7cbed8cf8f31e1f13e5aa0759bb2c6e1b389dc990c"
+    }
+  },
+  "wheel_version": "1.14.3+padmint.1",
+  "python_version": "3.13.15",
+  "python_sdk": {
+    "file": "python.3.13.15.nupkg",
+    "url": "https://api.nuget.org/v3-flatcontainer/python/3.13.15/python.3.13.15.nupkg",
+    "size": 14391248,
+    "sha256": "05357887df50d3153efc681bdf432c321d3e2f9ce5788f99f4515b27e8fda0ac"
+  },
+  "build_dependencies": {
+    "setuptools": {
+      "file": "setuptools-80.9.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/a3/dc/17031897dae0efacfea57dfd3a82fdd2a2aeb58e0ff71b77b87e44edc772/setuptools-80.9.0-py3-none-any.whl",
+      "version": "80.9.0",
+      "size": 1201486,
+      "sha256": "062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922"
+    },
+    "wheel": {
+      "file": "wheel-0.45.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/0b/2c/87f3254fd8ffd29e4c02732eee68a83a1d3c346ae39bc6822dcbcb697f2b/wheel-0.45.1-py3-none-any.whl",
+      "version": "0.45.1",
+      "size": 72494,
+      "sha256": "708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248"
+    },
+    "packaging": {
+      "version": "25.0",
+      "file": "packaging-25.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl",
+      "size": 66469,
+      "sha256": "29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484"
+    }
+  },
+  "patch_sha256": "742ef18f6e396d657e5f7ad4317a4571db0ceee4f29f4b09a0d109538987ed79"
+}

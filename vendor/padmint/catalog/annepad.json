@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "annepad",
+  "repo_url": "https://github.com/chrissotraidis/annepad",
+  "name": "AnnePad",
+  "game": "Pokémon Stadium (N64)",
+  "player_targets": [
+    "ios",
+    "macos"
+  ],
+  "game_ids": [
+    "NPOE"
+  ],
+  "free_space_gb": 11,
+  "player_help": "https://github.com/chrissotraidis/annepad#get-started",
+  "reviewed_revision": null,
+  "notes": "Manifest owned by the game repository (steps around its existing scripts; ROM read at build time).",
+  "manifest": null,
+  "before_build": {
+    "commands": [
+      "brew install cmake ninja mips-linux-gnu-binutils jq ripgrep sdl2"
+    ]
+  },
+  "player_next": {
+    "macos": {
+      "steps": [
+        "Open {file} and move AnnePad.app to your Applications folder.",
+        "Open AnnePad and choose your own Pokémon Stadium (US) ROM with Change ROM. Keep Homebrew's sdl2 installed: AnnePad uses it.",
+        "Updating? Replace the old AnnePad.app with the new one. Your saves are kept."
+      ],
+      "translations": {
+        "es": {
+          "steps": [
+            "Abre {file} y mueve AnnePad.app a tu carpeta Aplicaciones.",
+            "Abre AnnePad y elige tu propia ROM de Pokémon Stadium (EE. UU.) con Change ROM. Mantén instalado sdl2 de Homebrew: AnnePad lo usa.",
+            "¿Actualizando? Reemplaza el AnnePad.app anterior por el nuevo. Tus partidas guardadas se conservan."
+          ]
+        },
+        "pt": {
+          "steps": [
+            "Abra {file} e mova o AnnePad.app para a sua pasta Aplicativos.",
+            "Abra o AnnePad e escolha a sua própria ROM de Pokémon Stadium (EUA) com Change ROM. Mantenha o sdl2 do Homebrew instalado: o AnnePad o usa.",
+            "Atualizando? Substitua o AnnePad.app antigo pelo novo. Seus saves são mantidos."
+          ]
+        }
+      }
+    }
+  }
+}

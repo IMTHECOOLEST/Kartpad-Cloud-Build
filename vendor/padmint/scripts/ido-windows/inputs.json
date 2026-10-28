@@ -1,0 +1,141 @@
+{
+  "schema": 1,
+  "revision": "v1.1-padmint-windows-1",
+  "llvm_version": "21.1.8",
+  "source_commit": "d6dd7fdea26cfe89dd01d7545618d4a9ae4f690a",
+  "source_prefix": "ido-static-recomp-d6dd7fdea26cfe89dd01d7545618d4a9ae4f690a",
+  "inputs": {
+    "source": {
+      "url": "https://codeload.github.com/decompals/ido-static-recomp/tar.gz/d6dd7fdea26cfe89dd01d7545618d4a9ae4f690a",
+      "commit": "d6dd7fdea26cfe89dd01d7545618d4a9ae4f690a",
+      "sha256": "bbb72c5714ec4241f7543ef519b2909fc0f151e58e40b8fb5e6669b09849e90c",
+      "libc_impl_git_blob": "a13307dc256a5ca83c895badf4f87cca8b2d30a1",
+      "file": "ido-static-recomp-v1.1.tar.gz",
+      "size": 12452650
+    },
+    "runtime": {
+      "url": "https://mirror.msys2.org/msys/x86_64/msys2-runtime-3.6.11-4-x86_64.pkg.tar.zst",
+      "sha256": "7b1c4b625483ceff9a87f2dfcf3659704dc3da655a0ad414ecb7d9175e7d3ba0",
+      "file": "msys2-runtime-3.6.11-4-x86_64.pkg.tar.zst",
+      "size": 2068768,
+      "members": {
+        "usr/bin/msys-2.0.dll": "d3b5324eef7fe377c3412bd8d9f5c526ba1136940e34105436b15e5f1ae90717",
+        "usr/share/doc/Cygwin/COPYING": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+        "usr/share/doc/Cygwin/CYGWIN_LICENSE": "794433752103cf4bbb4a84a1bdb8fbc150abb1762704bb35fecc9f7f820be984"
+      }
+    },
+    "devel": {
+      "url": "https://mirror.msys2.org/msys/x86_64/msys2-runtime-devel-3.6.11-4-x86_64.pkg.tar.zst",
+      "sha256": "8e420d347b8f6f717ad9709bf22dc43d7e818923490b1052c1fa76daa1b0b362",
+      "file": "msys2-runtime-devel-3.6.11-4-x86_64.pkg.tar.zst",
+      "size": 5934746
+    },
+    "w32headers": {
+      "url": "https://mirror.msys2.org/msys/x86_64/msys2-w32api-headers-14.0.0.r0.g9b3dd0125-1-x86_64.pkg.tar.zst",
+      "sha256": "fcadf735fb214d33c64e145f82490c8693aeb6cb6a20ee8479e9f408aa832613",
+      "file": "msys2-w32api-headers-14.0.0.r0.g9b3dd0125-1-x86_64.pkg.tar.zst",
+      "size": 6203022
+    },
+    "w32runtime": {
+      "url": "https://mirror.msys2.org/msys/x86_64/msys2-w32api-runtime-14.0.0.r0.g9b3dd0125-1-x86_64.pkg.tar.zst",
+      "sha256": "a9c5c922f5191f7e73333ea2d5392811282387986b9cb7f94a7c9156f717d4b3",
+      "file": "msys2-w32api-runtime-14.0.0.r0.g9b3dd0125-1-x86_64.pkg.tar.zst",
+      "size": 3042471
+    },
+    "chkstk": {
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-21.1.8/compiler-rt/lib/builtins/x86_64/chkstk.S",
+      "sha256": "eadb9b028c8fc2ea1c685c61f61a84bd3defe82f8441a6845b14123de3b478c5",
+      "size": 1009,
+      "file": "compiler-rt-chkstk.S"
+    },
+    "assembly": {
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-21.1.8/compiler-rt/lib/builtins/assembly.h",
+      "sha256": "48a5c8e13dbae5694bbc9ab051392d58d08471ecac5e5f8cddf75f154a58cc64",
+      "size": 12332,
+      "file": "compiler-rt-assembly.h"
+    },
+    "compiler_license": {
+      "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-21.1.8/compiler-rt/LICENSE.TXT",
+      "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d",
+      "size": 16708,
+      "file": "compiler-rt-LICENSE.TXT"
+    },
+    "ido53": {
+      "url": "https://github.com/decompals/ido-static-recomp/releases/download/v1.1/ido-5.3-recomp-windows.tar.gz",
+      "sha256": "ed1357e399217bf82f6bc30ac5a2f5607485d1daaa73adb6775edb6206e0806b",
+      "size": 4499073,
+      "file": "ido-5.3-recomp-windows.tar.gz"
+    }
+  },
+  "patch_sha256": "fb9709fb579602c8af346147a4fd851e03931a39f0e434a62ccae6e60cfd53eb",
+  "patched_files": {
+    "libc_impl.c": {
+      "before": "0693d7d644ce52fea14b94d0d1d6456acdd7c513a229eebcabfecbdebe0f76a5",
+      "after": "8e8e28144d759bf3efcfe623ed5fbded223b382ef7e1d2d8a91be1e171f27351"
+    },
+    "recomp.cpp": {
+      "before": "e9b132c54ce76cf52aae6d1ff75158fff3b16fa9562b3d22e340aa894372e482",
+      "after": "58a61c43d61b185194ac9ae741753473687a2fe48465991bb88b7edb5b1ce4ad"
+    }
+  },
+  "tools71": {
+    "acpp": {
+      "input": "usr/lib/acpp",
+      "generated_sha256": "21c67bc3e380703f7df5536f6e0eda1273845d2c2adaef3486d9112148b0f8f8"
+    },
+    "as0": {
+      "input": "usr/lib/as0",
+      "generated_sha256": "ec0364b4d26e4cecb20996a28c06a39b665f2ae17388079ed6510046a433f7cd"
+    },
+    "as1": {
+      "input": "usr/lib/as1",
+      "generated_sha256": "19494fb081b3463a06c4159dbefe3055aa50ed4254cdbfeb6e1d5d980757f5ab"
+    },
+    "cc": {
+      "input": "usr/bin/cc",
+      "generated_sha256": "dc6100f690d7083f44f3485d22fb20606ed769e1cbbe610eea32769acf24f2b1"
+    },
+    "cfe": {
+      "input": "usr/lib/cfe",
+      "generated_sha256": "37527b37ffb14cf0ecb10357bcb2f1d75a516da39cf3c7b94b73f138dcf0da01"
+    },
+    "edgcpfe": {
+      "input": "usr/lib/DCC/edgcpfe",
+      "generated_sha256": "9a425a24860635ef70e352631ac19b67157a9aba6c72a59d627ad3912635f615"
+    },
+    "ugen": {
+      "input": "usr/lib/ugen",
+      "generated_sha256": "44c24d9d1d8c47eb16a32fd58b0d53cd6eefe6e5c27b7ed415f1521f41b5618a"
+    },
+    "ujoin": {
+      "input": "usr/lib/ujoin",
+      "generated_sha256": "2ee95ccb9e15fc522922cae6d789af145760988b7bfe0e6ce5719ff7ba1c8263"
+    },
+    "uld": {
+      "input": "usr/lib/uld",
+      "generated_sha256": "9351ea8969ffd444515979a6218362e2927a626629afe9de1f24f59e2d856541"
+    },
+    "umerge": {
+      "input": "usr/lib/umerge",
+      "generated_sha256": "0cb19eb634def10b6a4ff8ddbb56677ea7758f077ff76f444cbd146f5d0873fb"
+    },
+    "uopt": {
+      "input": "usr/lib/uopt",
+      "generated_sha256": "0f2c66d2098e373fcc18d51a5220058f417ae6e91479f13f7b0b8d5291eadd01"
+    },
+    "upas": {
+      "input": "usr/lib/upas",
+      "generated_sha256": "b1c131799b3eed9eafd5482853b0f057d08eb769110629117e47a6b4b9724dee"
+    },
+    "usplit": {
+      "input": "usr/lib/usplit",
+      "generated_sha256": "108f54eb9a60943077bf41557fc2553e8d41698e5e0fac474518e4abd0378281"
+    }
+  },
+  "notes": [
+    "IDO5.3 executables remain the official unchanged v1.1 Windows compiler; its diagnostic catalog uses the exact pinned source catalog in LF form. IDO7.1 is rebuilt from pinned IRIX inputs and generated C with only host portability corrections.",
+    "MSYS package checksums were verified against packages.msys2.org. The runtime source URL is https://mirror.msys2.org/msys/sources/msys2-runtime-3.6.11-4.src.tar.zst.",
+    "No package distribution or player-recipe adoption is authorized by this source producer."
+  ],
+  "catalog53_sha256": "6f2d777730f0a70328bb932c116c1c195da765cb9bbdee8c6d3eaf7d6ad77e78"
+}

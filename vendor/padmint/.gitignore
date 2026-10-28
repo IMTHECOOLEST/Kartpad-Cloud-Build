@@ -1,0 +1,23 @@
+# Game inputs and personal builds never belong in this repository.
+build/
+out/
+private/
+*.iso
+*.wbfs
+*.rvz
+*.ciso
+*.gcm
+*.wia
+*.wad
+*.z64
+*.n64
+*.v64
+*.rom
+*.ipa
+*.apk
+*.aab
+*.sav
+*.bin
+.DS_Store
+__pycache__/
+*.pyc

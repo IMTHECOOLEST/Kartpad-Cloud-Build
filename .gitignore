@@ -1,0 +1,43 @@
+# Nothing from a game disc belongs in this repository: no images, no extracted
+# folders, no game data, no packs, no personal builds.
+
+# Disc images and containers (any letter case)
+*.[iI][sS][oO]
+*.[wW][bB][fF][sS]
+*.[rR][vV][zZ]
+*.[wW][iI][aA]
+*.[gG][cC][zZ]
+*.[cC][iI][sS][oO]
+*.[gG][cC][mM]
+*.[wW][dD][fF]
+*.[wW][bB][iI]
+
+# The disc zip itself
+*.[zZ][iI][pP]
+
+# Personal builds and game packs
+*.ipa
+*.dylib
+*.so
+*.dol
+*.rel
+
+# Extracted discs and game data (anchored to the repository root)
+/DATA/
+/UPDATE/
+/CHANNEL/
+/sys/
+/files/
+/disc-work/
+/extract/
+/padmint-home/
+/padmint-out/
+/release-assets/
+*game data*/
+*game-data*/
+*.data/
+
+# Local noise
+__pycache__/
+*.pyc
+.DS_Store

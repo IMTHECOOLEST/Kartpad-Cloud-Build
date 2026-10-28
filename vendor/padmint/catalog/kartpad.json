@@ -1,0 +1,401 @@
+{
+  "schema_version": 1,
+  "id": "kartpad",
+  "repo_url": "https://github.com/chrissotraidis/kartpad",
+  "player_targets": [
+    "android",
+    "ios",
+    "macos"
+  ],
+  "ready_to_play": {
+    "url": "https://github.com/chrissotraidis/kartpad/releases/latest",
+    "platforms": [
+      "android"
+    ],
+    "text": "KartPad for Android is a ready-to-play download: the app already has the game code. Install it from KartPad's latest release, then add your own game data when it asks. PadMint makes that game data folder from your disc.",
+    "translations": {
+      "es": {
+        "text": "KartPad para Android es una descarga lista para jugar: la app ya trae el código del juego. Instálala desde la última versión de KartPad y añade tus propios datos del juego cuando te los pida. PadMint crea esa carpeta de datos del juego a partir de tu disco."
+      },
+      "pt": {
+        "text": "O KartPad para Android é um download pronto para jogar: o app já traz o código do jogo. Instale-o a partir da versão mais recente do KartPad e adicione seus próprios dados do jogo quando ele pedir. O PadMint cria essa pasta de dados do jogo a partir do seu disco."
+      }
+    }
+  },
+  "game_ids": [
+    "RMCP01"
+  ],
+  "free_space_gb": 16,
+  "free_space_gb_by_target": {
+    "macos": 12
+  },
+  "ios_off_mac": true,
+  "reviewed_revision": null,
+  "notes": "Players: padmint make kartpad android|ios|macos. The published or repository recipe is authoritative; this fallback mirrors KartPad 0.8.2's recipe. Mac apps require Apple Silicon; iPhone/iPad builds on Intel Mac remain experimental.",
+  "player_next": {
+    "android": {
+      "steps": [
+        "Install KartPad-v…-android.apk from https://github.com/chrissotraidis/kartpad/releases/latest. It already has the game code, so you don't need {file}. It updates an older KartPad and keeps your saves; don't uninstall first.",
+        "Copy the KartPad game data folder from {folder} to the phone or tablet (USB cable, cloud drive or Quick Share).",
+        "Open KartPad and tap Import Game on the Mario Kart Wii card. At Game Data & Saves, tap Import from Extracted Game Data Folder, pick the KartPad game data folder, tap Use this folder and Allow, then Done. If you played before, your game data is already there: tap Play Game."
+      ],
+      "phone_steps": [
+        "Install KartPad-v…-android.apk from https://github.com/chrissotraidis/kartpad/releases/latest. It already has the game code, so you don't need {file}. Update over an older KartPad to keep your saves; don't uninstall first.",
+        "Your KartPad game data folder is already on this phone, in {folder}. No computer or file transfer is needed.",
+        "Open KartPad and tap Import Game on the Mario Kart Wii card. At Game Data & Saves, tap Import from Extracted Game Data Folder and select the KartPad game data folder in {folder}. Tap Use this folder, then Allow. When the import finishes, tap Done."
+      ],
+      "note": "KartPad 0.7.9 and newer for Android include the game code. On Android, PadMint's part is the KartPad game data folder.",
+      "translations": {
+        "es": {
+          "steps": [
+            "Instala KartPad-v…-android.apk desde https://github.com/chrissotraidis/kartpad/releases/latest. Ya trae el código del juego, así que no necesitas {file}. Actualiza un KartPad anterior y conserva tus partidas; no lo desinstales antes.",
+            "Copia la carpeta KartPad game data de {folder} al teléfono o tableta (cable USB, nube o Quick Share).",
+            "Abre KartPad y toca Import Game en la tarjeta de Mario Kart Wii. En Game Data & Saves, toca Import from Extracted Game Data Folder, elige la carpeta KartPad game data, toca Use this folder y Allow, y luego Done. Si ya jugaste antes, tus datos del juego ya están: toca Play Game."
+          ],
+          "phone_steps": [
+            "Instala KartPad-v…-android.apk desde https://github.com/chrissotraidis/kartpad/releases/latest. Ya trae el código del juego, así que no necesitas {file}. Actualiza sobre un KartPad anterior para conservar tus partidas; no lo desinstales antes.",
+            "Tu carpeta KartPad game data ya está en este teléfono, en {folder}. No necesitas computadora ni copiar archivos.",
+            "Abre KartPad y toca Import Game en la tarjeta de Mario Kart Wii. En Game Data & Saves, toca Import from Extracted Game Data Folder y elige la carpeta KartPad game data en {folder}. Toca Use this folder y luego Allow. Cuando termine la importación, toca Done."
+          ],
+          "note": "KartPad 0.7.9 y posteriores para Android traen el código del juego. En Android, lo que aporta PadMint es la carpeta KartPad game data."
+        },
+        "pt": {
+          "steps": [
+            "Instale o KartPad-v…-android.apk a partir de https://github.com/chrissotraidis/kartpad/releases/latest. Ele já traz o código do jogo, então você não precisa de {file}. Ele atualiza um KartPad anterior e mantém seus saves; não desinstale antes.",
+            "Copie a pasta KartPad game data de {folder} para o celular ou tablet (cabo USB, nuvem ou Quick Share).",
+            "Abra o KartPad e toque em Import Game no cartão de Mario Kart Wii. Em Game Data & Saves, toque em Import from Extracted Game Data Folder, escolha a pasta KartPad game data, toque em Use this folder e Allow, e depois em Done. Se você já jogou antes, seus dados do jogo já estão lá: toque em Play Game."
+          ],
+          "phone_steps": [
+            "Instale o KartPad-v…-android.apk a partir de https://github.com/chrissotraidis/kartpad/releases/latest. Ele já traz o código do jogo, então você não precisa de {file}. Atualize sobre um KartPad anterior para manter seus saves; não desinstale antes.",
+            "Sua pasta KartPad game data já está neste celular, em {folder}. Não precisa de computador nem de copiar arquivos.",
+            "Abra o KartPad e toque em Import Game no cartão de Mario Kart Wii. Em Game Data & Saves, toque em Import from Extracted Game Data Folder e escolha a pasta KartPad game data em {folder}. Toque em Use this folder e depois em Allow. Quando a importação terminar, toque em Done."
+          ],
+          "note": "O KartPad 0.7.9 e mais novos para Android trazem o código do jogo. No Android, a parte do PadMint é a pasta KartPad game data."
+        }
+      }
+    },
+    "ios": {
+      "sideload": true,
+      "steps": [
+        "First time only: put the KartPad game data folder from {folder} on the device (iCloud Drive, a USB drive or a cloud drive app). In KartPad, tap Import Game next to Mario Kart Wii, then Import from Extracted Folder…, and pick that folder."
+      ],
+      "note": "When you update, your KartPad game data stays: if KartPad doesn't ask for it, you're ready to play.",
+      "translations": {
+        "es": {
+          "steps": [
+            "Solo la primera vez: pon la carpeta KartPad game data de {folder} en el dispositivo (iCloud Drive, una memoria USB o una app de nube). En KartPad, toca Import Game junto a Mario Kart Wii, luego Import from Extracted Folder…, y elige esa carpeta."
+          ],
+          "note": "Al actualizar, tus datos del juego de KartPad se conservan: si KartPad no los pide, ya puedes jugar."
+        },
+        "pt": {
+          "steps": [
+            "Só na primeira vez: coloque a pasta KartPad game data de {folder} no aparelho (iCloud Drive, um pendrive ou um app de nuvem). No KartPad, toque em Import Game ao lado de Mario Kart Wii, depois em Import from Extracted Folder…, e escolha essa pasta."
+          ],
+          "note": "Ao atualizar, os dados do jogo do KartPad continuam: se o KartPad não pedir, já pode jogar."
+        }
+      }
+    },
+    "macos": {
+      "steps": [
+        "Open {file}, move the KartPad app to your Applications folder and open it. The first time, macOS says it can't check the app: choose Done, then System Settings → Privacy & Security → Open Anyway.",
+        "Updating? Quit KartPad and replace the app in Applications; your settings and saves stay.",
+        "First time only: when KartPad asks for game data, choose your extracted Mario Kart Wii DATA folder (in Dolphin: right-click the game, Properties → Filesystem, right-click the disc, Extract Entire Disc). For Retro Rewind setup, follow the Mac guide: https://github.com/chrissotraidis/kartpad/blob/main/docs/INSTALL_MACOS.md"
+      ],
+      "translations": {
+        "es": {
+          "steps": [
+            "Abre {file}, mueve la app KartPad a tu carpeta Aplicaciones y ábrela. La primera vez, macOS dice que no puede comprobar la app: elige OK y luego Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente.",
+            "¿Actualizas? Cierra KartPad y reemplaza la app en Aplicaciones; tus ajustes y partidas se conservan.",
+            "Solo la primera vez: cuando KartPad pida los datos del juego, elige la carpeta DATA extraída de tu Mario Kart Wii (en Dolphin: clic derecho en el juego, Propiedades → Sistema de archivos, clic derecho en el disco, Extraer todo el disco). Para configurar Retro Rewind, sigue la guía para Mac: https://github.com/chrissotraidis/kartpad/blob/main/docs/INSTALL_MACOS.md"
+          ]
+        },
+        "pt": {
+          "steps": [
+            "Abra {file}, mova o app KartPad para a pasta Aplicativos e abra-o. Na primeira vez, o macOS diz que não pode verificar o app: escolha OK e depois Ajustes do Sistema → Privacidade e Segurança → Abrir Mesmo Assim.",
+            "Atualizando? Feche o KartPad e substitua o app em Aplicativos; seus ajustes e saves ficam.",
+            "Só na primeira vez: quando o KartPad pedir os dados do jogo, escolha a pasta DATA extraída do seu Mario Kart Wii (no Dolphin: clique direito no jogo, Propriedades → Sistema de Arquivos, clique direito no disco, Extrair Disco Inteiro). Para configurar o Retro Rewind, siga o guia para Mac: https://github.com/chrissotraidis/kartpad/blob/main/docs/INSTALL_MACOS.md"
+          ]
+        }
+      }
+    }
+  },
+  "game_data_import": {
+    "android": "Import from Extracted Game Data Folder",
+    "ios": "Import from Extracted Folder"
+  },
+  "manifest": {
+    "schema_version": 1,
+    "id": "kartpad",
+    "name": "KartPad",
+    "game": "Mario Kart Wii (Wii, RMCP01)",
+    "kind": "disc-translation",
+    "status": "experimental",
+    "inputs": [
+      {
+        "type": "wii-disc",
+        "formats": [
+          "iso",
+          "wbfs",
+          "rvz",
+          "wia",
+          "gcz",
+          "ciso"
+        ],
+        "game_ids": [
+          "RMCP01"
+        ],
+        "revisions": [
+          0
+        ],
+        "description": "Your own PAL RMCP01 revision 0 disc image. Any dump or container is accepted if extraction reproduces the profile's exact main.dol and StaticR.rel."
+      }
+    ],
+    "targets": {
+      "ios": {
+        "hosts": {
+          "macos-arm64": "experimental",
+          "macos-x86_64": "experimental",
+          "windows-arm64": "experimental",
+          "windows-x86_64": "experimental",
+          "linux-x86_64": "experimental",
+          "linux-arm64": "experimental"
+        },
+        "tools": [
+          "git",
+          "dotnet",
+          "cmake",
+          "ninja",
+          "nodtool",
+          "libcxx"
+        ],
+        "published_app": "KartPad-v{version}-ios-for-padmint.ipa",
+        "output": "ipa",
+        "check": "none",
+        "steps": [
+          {
+            "stage": "preflight",
+            "command": [
+              "{python}",
+              "-m",
+              "kartpad_builder.cli",
+              "bootstrap",
+              "--target",
+              "ios-pack"
+            ],
+            "env": {
+              "PYTHONPATH": "{repo}/builder"
+            }
+          },
+          {
+            "stage": "build",
+            "command": [
+              "{python}",
+              "-m",
+              "kartpad_builder.cli",
+              "build-pack",
+              "ios",
+              "{disc}",
+              "--app",
+              "{app}",
+              "--work-root",
+              "{work}",
+              "--output",
+              "{output}",
+              "--jobs",
+              "{jobs}",
+              "--game-data",
+              "{output}.data"
+            ],
+            "env": {
+              "PYTHONPATH": "{repo}/builder"
+            }
+          }
+        ]
+      },
+      "macos": {
+        "hosts": {
+          "macos-arm64": "experimental"
+        },
+        "tools": [
+          "dotnet",
+          "cmake",
+          "ninja",
+          "nodtool"
+        ],
+        "output": "zip",
+        "check": "none",
+        "steps": [
+          {
+            "stage": "preflight",
+            "command": [
+              "/bin/bash",
+              "{repo}/scripts/build-user-ipa.sh",
+              "bootstrap",
+              "--target",
+              "macos"
+            ]
+          },
+          {
+            "stage": "translate",
+            "command": [
+              "/bin/bash",
+              "{repo}/scripts/translate-retro-rewind.sh",
+              "--image",
+              "{disc}",
+              "--retro-root",
+              "{repo}/private/builder/retro-rewind-downloads/6.13.1-extracted/RetroRewind6",
+              "--payload",
+              "{repo}/private/builder/retro-rewind-downloads/payload.RMCPD00.bin"
+            ],
+            "env": {
+              "KARTPAD_TRANSLATION_JOBS": "{jobs}"
+            }
+          },
+          {
+            "stage": "compile",
+            "command": [
+              "/bin/bash",
+              "{repo}/scripts/build-padmint-macos.sh",
+              "{repo}/private/self-build/retro-rewind/translation",
+              "{work}",
+              "{output}"
+            ]
+          }
+        ]
+      },
+      "android": {
+        "hosts": {
+          "macos-arm64": "experimental",
+          "macos-x86_64": "experimental",
+          "windows-arm64": "experimental",
+          "windows-x86_64": "experimental",
+          "linux-x86_64": "experimental",
+          "linux-arm64": "experimental"
+        },
+        "tools": [
+          "git",
+          "dotnet",
+          "cmake",
+          "ninja",
+          "android-ndk",
+          "nodtool"
+        ],
+        "published_app": "KartPad-v{version}-android.apk",
+        "output": "so",
+        "check": "none",
+        "steps": [
+          {
+            "stage": "preflight",
+            "command": [
+              "{python}",
+              "-m",
+              "kartpad_builder.cli",
+              "bootstrap",
+              "--target",
+              "android-pack"
+            ],
+            "env": {
+              "PYTHONPATH": "{repo}/builder"
+            }
+          },
+          {
+            "stage": "build",
+            "command": [
+              "{python}",
+              "-m",
+              "kartpad_builder.cli",
+              "build-pack",
+              "android",
+              "{disc}",
+              "--app",
+              "{app}",
+              "--work-root",
+              "{work}",
+              "--output",
+              "{output}",
+              "--jobs",
+              "{jobs}",
+              "--game-data",
+              "{output}.data"
+            ],
+            "env": {
+              "PYTHONPATH": "{repo}/builder"
+            }
+          }
+        ]
+      }
+    },
+    "requirements": {
+      "disk_gb": 16,
+      "tools": [
+        {
+          "name": "git",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "cmake",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "ninja",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "python3",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "rg",
+          "version_args": [
+            "--version"
+          ]
+        },
+        {
+          "name": "dotnet",
+          "version_args": [
+            "--version"
+          ],
+          "min_version": "8"
+        },
+        {
+          "name": "xcodebuild",
+          "version_args": [
+            "-version"
+          ],
+          "player": true,
+          "hosts": [
+            "macos-arm64",
+            "macos-x86_64"
+          ],
+          "targets": [
+            "ios",
+            "macos"
+          ],
+          "note": "Install Xcode from the App Store, open it once, then run PadMint again"
+        }
+      ]
+    },
+    "stages": [
+      "preflight",
+      "extract",
+      "translate",
+      "compile",
+      "app",
+      "package"
+    ],
+    "publication": {
+      "public_binaries": false,
+      "reason": "PadMint outputs are personal builds. Maintainer releases provide an Android APK and game-code-free iOS inputs for PadMint, plus source and notices."
+    }
+  },
+  "game": "Mario Kart Wii (Wii)",
+  "ios_intel_mac": true
+}

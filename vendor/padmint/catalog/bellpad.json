@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "id": "bellpad",
+  "repo_url": "https://github.com/chrissotraidis/bellpad",
+  "name": "BellPad",
+  "game": "Animal Crossing (GameCube)",
+  "player_targets": [
+    "ios",
+    "macos"
+  ],
+  "github_build": true,
+  "game_ids": [
+    "GAFE01"
+  ],
+  "free_space_gb": 3,
+  "player_game_file": "in-app",
+  "player_help": "https://github.com/chrissotraidis/bellpad#get-bellpad",
+  "reviewed_revision": null,
+  "notes": "Manifest owned by the game repository (steps around its existing scripts; game data chosen in the app).",
+  "manifest": null,
+  "before_build": {
+    "commands": [
+      "brew install cmake ninja ripgrep sdl2"
+    ]
+  },
+  "player_next": {
+    "macos": {
+      "steps": [
+        "Open {file} and move Bellpad.app to your Applications folder.",
+        "Open BellPad and choose your own Animal Crossing (GAFE01) disc image when it asks. Keep Homebrew's sdl2 installed: BellPad uses it.",
+        "Updating? Replace the old Bellpad.app with the new one. Your saves and disc choice are kept."
+      ],
+      "translations": {
+        "es": {
+          "steps": [
+            "Abre {file} y mueve Bellpad.app a tu carpeta Aplicaciones.",
+            "Abre BellPad y elige tu propia imagen de disco de Animal Crossing (GAFE01) cuando te la pida. Mantén instalado sdl2 de Homebrew: BellPad lo usa.",
+            "¿Actualizando? Reemplaza el Bellpad.app anterior por el nuevo. Tus partidas y el disco elegido se conservan."
+          ]
+        },
+        "pt": {
+          "steps": [
+            "Abra {file} e mova o Bellpad.app para a sua pasta Aplicativos.",
+            "Abra o BellPad e escolha a sua própria imagem de disco de Animal Crossing (GAFE01) quando ele pedir. Mantenha o sdl2 do Homebrew instalado: o BellPad o usa.",
+            "Atualizando? Substitua o Bellpad.app antigo pelo novo. Seus saves e o disco escolhido são mantidos."
+          ]
+        }
+      }
+    }
+  }
+}

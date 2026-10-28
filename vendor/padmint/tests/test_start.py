@@ -1,0 +1,243 @@
+import io
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from padmint import cli, manifest, tools
+
+CATALOG = {
+    "kartpad": {"id": "kartpad", "repo_url": "https://github.com/example/kartpad",
+                "player_targets": ["android", "ios"],
+                "manifest": {"name": "KartPad", "inputs": [{"type": "wii-disc", "formats": ["iso", "rvz"]}]}},
+    "other": {"id": "other", "repo_url": "https://github.com/example/other"},
+    "romgame": {"id": "romgame", "repo_url": "https://github.com/example/romgame", "player_targets": ["ios"],
+                "player_game_file": "in-app", "manifest": {"name": "RomGame"}},
+    "repogame": {"id": "repogame", "name": "RepoGame", "repo_url": "https://github.com/example/repogame",
+                 "player_targets": ["ios"], "player_game_file": "in-app", "manifest": None,
+                 "player_help": "https://github.com/example/repogame#get-started"},
+}
+
+
+class StartTests(unittest.TestCase):
+    def setUp(self):
+        downloads = Path.home() / "Downloads"
+        self.out = (downloads if downloads.is_dir() else Path.home()).resolve()
+
+    def run_start(self, answers, host):
+        replies = iter(answers)
+        with mock.patch.object(cli, "catalog", return_value=CATALOG), \
+                mock.patch.object(cli, "host_id", return_value=host), \
+                mock.patch.object(cli, "make", return_value=0) as make:
+            code = cli.start(lambda _prompt: next(replies), io.StringIO())
+        return code, make
+
+    def test_asks_only_for_the_game_file_and_folder_when_one_choice_remains(self):
+        with tempfile.TemporaryDirectory() as folder:
+            disc = Path(folder) / "My Disc.wbfs"
+            disc.write_bytes(b"x")
+            code, make = self.run_start(["1", f"'{disc}'", folder], "linux-x86_64")
+        self.assertEqual(code, 0)
+        self.assertEqual(make.call_args.args[:3], ("kartpad", "android", disc.resolve()))
+        self.assertEqual(make.call_args.args[3], self.out)  # saved to Downloads without asking
+
+    def test_mac_also_offers_iphone(self):
+        with tempfile.TemporaryDirectory() as folder:
+            disc = Path(folder) / "disc.wbfs"
+            disc.write_bytes(b"x")
+            _code, make = self.run_start(["1", "2", str(disc), folder], "macos-arm64")
+        self.assertEqual(make.call_args.args[1], "ios")
+
+    def test_intel_mac_offers_android_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            disc = Path(folder) / "disc.wbfs"
+            disc.write_bytes(b"x")
+            _code, make = self.run_start(["1", str(disc), folder], "macos-x86_64")
+        self.assertEqual(make.call_args.args[:2], ("kartpad", "android"))
+
+    def test_intel_terminal_explains_the_mac_choice_before_selecting_a_device(self):
+        catalog = {"kartpad": dict(CATALOG["kartpad"], player_targets=["android", "ios", "macos"],
+                                   ios_intel_mac=True)}
+        with tempfile.TemporaryDirectory() as folder:
+            disc = Path(folder) / "disc.iso"
+            disc.write_bytes(b"x")
+            stream = io.StringIO()
+            replies = iter(["2", str(disc)])
+            with mock.patch.object(cli, "catalog", return_value=catalog), \
+                    mock.patch.object(cli, "host_id", return_value="macos-x86_64"), \
+                    mock.patch.object(cli, "on_android", return_value=False), \
+                    mock.patch.dict("os.environ", {"PADMINT_LANG": "en"}), \
+                    mock.patch.object(cli, "make", return_value=0) as make:
+                cli.start(lambda _prompt: next(replies), stream)
+        shown = stream.getvalue()
+        self.assertIn("KartPad for Mac requires Apple Silicon", shown)
+        self.assertIn("cannot run on an Intel Mac", shown)
+        self.assertNotIn("3. This Mac", shown)
+        self.assertEqual(make.call_args.args[:2], ("kartpad", "ios"))
+
+    def test_windows_and_linux_offer_iphone_for_games_marked_ios_off_mac(self):
+        marked = dict(CATALOG, kartpad=dict(CATALOG["kartpad"], ios_off_mac=True))
+        for host in ("windows-x86_64", "linux-arm64"):
+            with self.subTest(host=host), tempfile.TemporaryDirectory() as folder:
+                disc = Path(folder) / "disc.wbfs"
+                disc.write_bytes(b"x")
+                # The other test games are iPhone-only without the mark, so KartPad is the only game.
+                replies, stream = iter(["2", str(disc)]), io.StringIO()
+                with mock.patch.object(cli, "catalog", return_value=marked), \
+                        mock.patch.object(cli, "host_id", return_value=host), \
+                        mock.patch.object(cli, "on_android", return_value=False), \
+                        mock.patch.object(cli, "make", return_value=0) as make:
+                    cli.start(lambda _prompt: next(replies), stream)
+                self.assertEqual(make.call_args.args[:2], ("kartpad", "ios"))
+                self.assertIn("2. iPhone or iPad (experimental)", stream.getvalue())
+
+    def test_iphone_off_a_mac_only_for_marked_games_and_never_on_a_phone(self):
+        marked = dict(CATALOG, kartpad=dict(CATALOG["kartpad"], ios_off_mac=True))
+        for catalog, phone in ((CATALOG, False), (marked, True)):
+            with self.subTest(phone=phone), tempfile.TemporaryDirectory() as folder:
+                disc = Path(folder) / "disc.wbfs"
+                disc.write_bytes(b"x")
+                replies = iter([str(disc)])
+                with mock.patch.object(cli, "catalog", return_value=catalog), \
+                        mock.patch.object(cli, "host_id", return_value="linux-arm64"), \
+                        mock.patch.object(cli, "on_android", return_value=phone), \
+                        mock.patch.object(cli, "game_files", return_value=[]), \
+                        mock.patch.object(cli, "make", return_value=0) as make:
+                    cli.start(lambda _prompt: next(replies), io.StringIO())
+                self.assertEqual(make.call_args.args[:2], ("kartpad", "android"))
+
+    def test_game_file_added_in_the_app_is_not_asked_for(self):
+        with tempfile.TemporaryDirectory() as folder:
+            _code, make = self.run_start(["3", folder], "macos-arm64")
+        self.assertEqual(make.call_args.args[:3], ("romgame", "ios", None))
+
+    def test_game_with_manifest_in_its_repository_is_offered_with_its_help_link(self):
+        stream = io.StringIO()
+        with tempfile.TemporaryDirectory() as folder:
+            replies = iter(["2", folder])
+            with mock.patch.object(cli, "catalog", return_value=CATALOG), \
+                    mock.patch.object(cli, "host_id", return_value="macos-arm64"), \
+                    mock.patch.object(cli, "make", return_value=0) as make:
+                cli.start(lambda _prompt: next(replies), stream)
+        self.assertEqual(make.call_args.args[:3], ("repogame", "ios", None))
+        self.assertIn("2. RepoGame", stream.getvalue())
+        self.assertIn("Next: https://github.com/example/repogame#get-started", stream.getvalue())
+
+    def test_dragged_paths_lose_quotes_and_escapes(self):
+        self.assertEqual(cli.dropped_path('"C:/Games/My Disc.wbfs"'), Path("C:/Games/My Disc.wbfs"))
+        if cli.os.name != "nt":
+            self.assertEqual(cli.dropped_path("/tmp/My\\ Disc.wbfs "), Path("/tmp/My Disc.wbfs"))
+
+
+class PhoneStartTests(unittest.TestCase):
+    """On an Android phone (Ubuntu in Termux) nothing can be dragged into the window."""
+
+    def run_on_phone(self, answers, downloads):
+        replies = iter(answers)
+        stream = io.StringIO()
+        with mock.patch.object(cli, "catalog", return_value=CATALOG), \
+                mock.patch.object(cli, "host_id", return_value="linux-arm64"), \
+                mock.patch.object(cli, "on_android", return_value=True), \
+                mock.patch.object(cli, "PHONE_DOWNLOADS", downloads), \
+                mock.patch.object(cli, "make", return_value=0) as make:
+            code = cli.start(lambda _prompt: next(replies), stream)
+        return code, make, stream.getvalue()
+
+    def test_offers_game_files_from_the_download_folder_and_saves_there(self):
+        with tempfile.TemporaryDirectory() as folder:
+            downloads = Path(folder)
+            (downloads / "notes.txt").write_text("x")
+            disc = downloads / "mkw.rvz"
+            disc.write_bytes(b"x")
+            code, make, shown = self.run_on_phone(["1"], downloads)
+        self.assertEqual(code, 0)
+        self.assertEqual(make.call_args.args[:4], ("kartpad", "android", disc.resolve(), downloads.resolve()))
+        self.assertIn("1. mkw.rvz", shown)
+        self.assertNotIn("notes.txt", shown)
+
+    def test_another_file_is_typed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            downloads = Path(folder)
+            (downloads / "mkw.iso").write_bytes(b"x")
+            other = downloads / "sub"
+            other.mkdir()
+            disc = other / "disc.rvz"
+            disc.write_bytes(b"x")
+            _code, make, _shown = self.run_on_phone(["2", str(disc)], downloads)
+        self.assertEqual(make.call_args.args[2], disc.resolve())
+
+    def test_disc_id_is_rejected_with_guidance_before_selecting_a_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            downloads = Path(folder)
+            disc = downloads / "Mario Kart Wii.rvz"
+            disc.write_bytes(b"x")
+            code, make, shown = self.run_on_phone(["RMCP01", "1"], downloads)
+        self.assertEqual(code, 0)
+        self.assertEqual(make.call_count, 1)
+        self.assertEqual(make.call_args.args[2], disc.resolve())
+        self.assertIn("Enter a menu number from 1 to 2.", shown)
+        self.assertIn("Using file: Mario Kart Wii.rvz", shown)
+
+    def test_folder_without_game_files_asks_for_a_path(self):
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as elsewhere:
+            downloads = Path(folder)
+            disc = Path(elsewhere) / "disc.iso"
+            disc.write_bytes(b"x")
+            code, make, shown = self.run_on_phone([str(Path(elsewhere) / "missing.rvz"), str(disc)], downloads)
+        self.assertEqual(code, 0)
+        self.assertEqual(make.call_args.args[2], disc.resolve())
+        self.assertIn("No file at", shown)
+
+    def test_phone_is_linux_with_android_system_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            mark = Path(folder) / "build.prop"
+            with mock.patch("padmint.manifest.ANDROID_MARK", mark), \
+                    mock.patch("padmint.manifest.platform.system", return_value="Linux"):
+                self.assertFalse(manifest.on_android())
+                mark.write_text("ro.build.version.release=16\n")
+                self.assertTrue(manifest.on_android())
+
+    def test_dotnet_heap_is_limited_on_a_phone_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            dotnet = Path(folder) / "tools/dotnet-8"
+            dotnet.mkdir(parents=True)
+            (dotnet / ".padmint-installed").write_text("{}")
+            lock = {"dotnet": {"version": "8", "bin": ["."], "hosts": {"linux-arm64": {}}}}
+            with mock.patch.dict(tools.os.environ, {"PADMINT_HOME": folder}), \
+                    mock.patch.object(tools, "lock", return_value=lock):
+                for phone in (False, True):
+                    with mock.patch.object(tools, "on_android", return_value=phone):
+                        env = tools.environment(["dotnet"], "linux-arm64", base={})
+                    self.assertEqual(env.get("DOTNET_GCHeapHardLimit"), tools.ANDROID_DOTNET_HEAP if phone else None)
+
+    def test_apps_with_nothing_to_build_show_their_steps_instead_of_building(self):
+        app = {"id": "padapp", "name": "PadApp", "repo_url": "https://github.com/example/padapp",
+               "player_help": "https://github.com/example/padapp#install",
+               "download": {"steps": ["Download the IPA.", "Add your own files."],
+                            "translations": {"es": {"steps": ["Descarga la IPA.", "Añade tus archivos."]}}}}
+        stream = io.StringIO()
+        with mock.patch.object(cli, "catalog", return_value=dict(CATALOG, padapp=app)), \
+                mock.patch.object(cli, "host_id", return_value="windows-x86_64"), \
+                mock.patch.object(cli, "on_android", return_value=False), \
+                mock.patch.object(cli, "make") as make, mock.patch.dict(cli.os.environ, {"PADMINT_LANG": "es"}):
+            replies = iter(["2"])  # 1. KartPad, 2. PadApp (no hace falta crearlo)
+            code = cli.start(lambda _prompt: next(replies), stream)
+        self.assertEqual(code, 0)
+        make.assert_not_called()
+        shown = stream.getvalue()
+        self.assertIn("PadApp (no hace falta crearlo)", shown)
+        self.assertIn("  2. Añade tus archivos.", shown)
+        self.assertIn("https://github.com/example/padapp#install", shown)
+
+    def test_an_app_to_download_cannot_also_be_built(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "padapp.json"
+            path.write_text('{"id": "padapp", "name": "PadApp", "repo_url": "https://github.com/example/padapp",'
+                            ' "player_targets": ["ios"], "free_space_gb": 3, "download": {"steps": ["x"]}}')
+            with mock.patch.object(manifest, "CATALOG", Path(folder)), self.assertRaises(ValueError) as error:
+                manifest.catalog()
+        self.assertIn("download needs a name, no player_targets", str(error.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()
